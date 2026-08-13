@@ -8,7 +8,7 @@
  * one of those two is the project.
  */
 import { signIn } from "../src/live-agent.js";
-import { handler, json, body, validToken } from "./_lib.js";
+import { handler, json, body, validToken, graceSeconds } from "./_lib.js";
 
 export default handler(async (req, res) => {
   if (req.method !== "POST") return json(res, 405, { error: "POST only" });
@@ -17,7 +17,9 @@ export default handler(async (req, res) => {
   if (!validToken(k)) {
     return json(res, 403, {
       error: "expired",
-      message: "That code has rotated. Scan the QR on the screen again — it changes every 90 seconds.",
+      // Derived, not hardcoded: the period is env-tunable, and copy that
+      // contradicts the actual config is worse than no copy at all.
+      message: `That code has rotated. Scan the QR on the screen again — a code stays good for about ${Math.round(graceSeconds() / 60)} minutes.`,
     });
   }
   if (!handle || !String(handle).trim()) return json(res, 400, { error: "pick a name" });

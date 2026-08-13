@@ -7,12 +7,12 @@
  * stagecraft.
  */
 import { immuneResponse } from "../src/live-agent.js";
-import { handler, json, isOperator } from "./_lib.js";
+import { handler, json, isOperator, operatorFailure } from "./_lib.js";
 
 export const config = { maxDuration: 60 };
 
 export default handler(async (req, res) => {
   if (req.method !== "POST") return json(res, 405, { error: "POST only" });
-  if (!isOperator(req)) return json(res, 403, { error: "operator token required" });
+  if (!isOperator(req)) return json(res, 403, { error: "operator token required", message: operatorFailure(req) });
   json(res, 200, await immuneResponse());
 });

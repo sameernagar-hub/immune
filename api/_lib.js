@@ -35,6 +35,24 @@ import { ObjectId } from "mongodb";
  */
 export const ROTATE_SECONDS = Number(process.env.IMMUNE_QR_PERIOD || 90);
 
+/**
+ * How many past windows still validate.
+ *
+ * The projector re-renders on the rotation period, but a *phone* captures its
+ * code once, at page load, and then a human has to read four options, pick one
+ * and type a name. Accepting only the current and previous window meant a code
+ * scanned 80 seconds into its window left the person about ten seconds — and
+ * they got "that code has rotated" for doing nothing wrong. On stage, with the
+ * phone being handed between people, that failure is close to guaranteed.
+ *
+ * So the wall still rotates every 90 s (the story and the countdown are
+ * unchanged), but a code stays redeemable for GRACE_WINDOWS × period. The
+ * tradeoff is deliberate: a photograph of the screen keeps working for a few
+ * minutes rather than one, which is a far smaller problem than a volunteer
+ * being rejected in front of judges.
+ */
+const GRACE_WINDOWS = Number(process.env.IMMUNE_QR_GRACE || 4);
+
 const SECRET = process.env.IMMUNE_QR_SECRET || "immune-local-dev-secret";
 
 export function windowToken(offset = 0, at = Date.now()) {
@@ -51,13 +69,19 @@ export function secondsLeft(at = Date.now()) {
 export function validToken(candidate) {
   if (!candidate) return false;
   const given = Buffer.from(String(candidate));
-  // Current window and the one before it. Constant-time compare because the
-  // cost is nothing and a timing oracle on a token is a silly way to lose.
-  for (const offset of [0, -1]) {
+  // The current window plus GRACE_WINDOWS behind it. Constant-time compare
+  // because the cost is nothing and a timing oracle on a token is a silly way
+  // to lose.
+  for (let offset = 0; offset >= -GRACE_WINDOWS; offset--) {
     const expected = Buffer.from(windowToken(offset));
     if (given.length === expected.length && timingSafeEqual(given, expected)) return true;
   }
   return false;
+}
+
+/** How long a freshly-minted code stays redeemable, for copy and diagnostics. */
+export function graceSeconds() {
+  return ROTATE_SECONDS * GRACE_WINDOWS;
 }
 
 /** The operator token — separate from the audience token, and it does not rotate. */
@@ -65,6 +89,25 @@ export function isOperator(req) {
   const supplied = new URL(req.url, "http://x").searchParams.get("token");
   const expected = process.env.IMMUNE_OP_TOKEN || "";
   return Boolean(expected) && supplied === expected;
+}
+
+/**
+ * Why `isOperator` said no — so a 403 is diagnosable in seconds.
+ *
+ * Failing closed when `IMMUNE_OP_TOKEN` is unset is correct: an unprotected
+ * /api/respond is a stranger firing the immune response before the punchline.
+ * But an unset variable and a wrong token are the same 403 from the outside,
+ * and on a deploy where the variable was simply never added that is a very
+ * expensive five minutes to spend on stage.
+ */
+export function operatorFailure(req) {
+  if (!process.env.IMMUNE_OP_TOKEN) {
+    return "IMMUNE_OP_TOKEN is not set on this deployment — add it in the Vercel project's environment variables and redeploy.";
+  }
+  const supplied = new URL(req.url, "http://x").searchParams.get("token");
+  return supplied
+    ? "operator token did not match"
+    : "operator token required — append ?token=…";
 }
 
 /* ------------------------------------------------------------------ http */
