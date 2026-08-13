@@ -42,33 +42,27 @@ agent, paste §0 and your lane section into it as the brief.
 rehearsed. **Do not edit them without saying so in the channel**; a change here
 after 3:45 puts the determinism proof back to zero.
 
-**Lane B — the one thing left that is worth building**
+**Lane B — the watcher is built; `npm run watch` works. Take these instead.**
 
-`scripts/watch.js` — a change-stream watcher, yours to create, nothing else
-touches that file. Open a change stream on `beliefs`, match updates where
-`status` becomes `revoked` or `quarantined`, and print each one as it arrives.
-Run it in a second terminal while `npm run demo` runs in the first.
+Lane A built `scripts/watch.js` because the window was closing on it. It is
+tested and in the video plan. **It is yours now — Lane A will not touch it again.**
 
-That gives us a **second process learning about the quarantine with nothing in
-its context** — one lie, N agents, which is where the real-world numbers come
-from. Twenty seconds of screen time, high value, and it does not touch the
-critical path, so it cannot break the demo.
+Two things worth your time, in this order:
 
-```js
-const stream = beliefs.watch(
-  [{ $match: { operationType: "update", "updateDescription.updatedFields.status": { $exists: true } } }],
-  { fullDocument: "updateLookup" }
-);
-for await (const change of stream) { /* print change.fullDocument */ }
-```
+1. **Rehearse the two-terminal run and time it.** Terminal 1 `npm run watch`,
+   wait for `refuses`, then terminal 2 `npm run demo`. Agent B prints two
+   banners: *infected* when the poison is stored, *stopped trusting it* when the
+   cascade fires. Confirm both land on the correct lines on your machine.
+   **If it flaps, say so immediately and we cut it — it is not on the critical
+   path and it will not hold up the video.**
+2. **The LLM extraction path** (`src/extract.js`) is written and falls back
+   cleanly. Prove it with a real `OPENROUTER_API_KEY`: `extractClaim()` should
+   return `mode: "llm"`, `subject_key: "refund.destination"`, IBAN verbatim.
+   **Then report which rung we are demoing** — the README currently states the
+   deterministic one, and that has to stay true. If the LLM path is flaky,
+   leaving it as-is is the correct outcome, not a failure.
 
-If that is running by **4:10**, it goes in the video. If not, drop it without
-argument — the cut list is §8 and it is not negotiable at this hour.
-
-The LLM extraction path (`src/extract.js`) is written and falls back cleanly. If
-you want to prove it with a real key, do that **after** the watcher, and report
-which rung we are demoing — the README currently says the deterministic one, and
-that has to stay true.
+ElevenLabs (Tier 3) only if both are done and the video is filmed.
 
 **Lane C — you are the critical path from here**
 

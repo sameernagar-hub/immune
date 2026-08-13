@@ -115,6 +115,36 @@ the end. It is deterministic: two consecutive runs are identical.
     └─ ✖ Refunds under 5,000 to the on-file destination…     [refund.approval_policy]
 ```
 
+### One lie, N agents — `npm run watch`
+
+Run this in a second terminal before the demo. **Agent B** is a second process
+sharing the same memory. It has never seen the ticket, holds no conversation
+history, and has one standing intent: pay this refund.
+
+```
+  ✔ 14:05:32  stored       Refunds for account ACME-1042 are paid to IBA…
+    Agent B has been infected too — and it never saw the ticket.
+    before  ● refuses    no trusted belief for this subject
+    after   ● would pay  based on Refunds … GB29 4471 8829… (trust 0.7)
+
+  ✖ 14:05:35  revoked      The payout destination for ACME-1042 has alre…
+    Agent B just stopped trusting it, and nobody told it to.
+    before  ● would pay  based on Refunds … GB29 4471 8829… (trust 0.7)
+    after   ● refuses    1 recalled, none survived the status and trust check
+```
+
+Both transitions arrive over a **change stream**, with no bytes passing between
+the two processes. The database is the shared brain — which is also why a
+poisoned fact in shared memory is a shared blast radius, and why the recovery
+has to live there too.
+
+Agent B also shows the discipline that follows from all this: a belief recalled
+by `$vectorSearch` is **re-read from the collection and re-checked** before it
+is allowed to justify anything. Search indexes update asynchronously, so for a
+moment after a revocation the index still returns a belief that is already
+quarantined. Search is recall; the document is the authority. We caught Agent B
+deciding it "would pay" on exactly that stale hit, and this is the fix.
+
 Then `npm run cold`: a **fresh process**, nothing in context, and the same
 channel sends the same lie again. The write still succeeds — we don't block
 writes, because blocking is the thing everyone already tries and it only has to
@@ -353,6 +383,8 @@ repository. Tagged at each green gate; see [BUILD-LOG.md](BUILD-LOG.md).
 | `scripts/reset.js` | deterministic reset to the pre-attack state |
 | `scripts/demo.js` | the five-act run, with self-assertions |
 | `scripts/cold.js` | the cold re-run proof |
+| `scripts/watch.js` | **Agent B** — a second process on the same memory, via change streams |
+| `scripts/rehearse.js` | runs the demo twice and diffs it; determinism gate |
 | `scripts/inspect.js` | memory inspector and run replay |
 | `COORDINATION.md` | the three-lane build contract, kept live during the window |
 
