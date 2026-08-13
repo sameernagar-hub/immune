@@ -403,7 +403,8 @@ Every layer has a ladder, each rung strictly cheaper than the one above. **The r
 |---|---|---|---|---|
 | **Connection** | `mongodb+srv://` | direct, non-SRV | local Atlas via Docker | **rung 2** — this network refuses SRV lookups |
 | **Embeddings** | provider API | deterministic lexical | — | **rung 2** — no key; byte-identical every run |
-| **Extraction** | LLM @ temp 0 | constrained to a `subject_key` enum | deterministic rules | **rung 3** — no OpenRouter credit |
+| **Extraction** | LLM @ temp 0 | constrained to a `subject_key` enum | deterministic rules | **rung 3** — deterministic, so the filmed run cannot drift |
+| **Fact-check** | LLM adjudicates + cites the deciding record | literal indicator comparison vs the system of record | — | **rung 2** in the demo · rung 1 verified working |
 | **Retrieval** | `$vectorSearch` + `filter` | re-declare filter fields | `$vectorSearch` then `$match`, limit 40 | **rung 1** |
 | **Cascade** | `$graphLookup` in a transaction | app-side BFS | sequential idempotent updates | **rung 1** — transaction committed |
 | **Propagation** | change streams | poll, and say so on screen | — | **rung 1** local · rung 2 hosted |
@@ -452,7 +453,8 @@ Between **1:30 and 5:00 PM PT on 13 August 2026**, from an empty repository. Tag
 We would rather say these than have them found.
 
 - **The verification oracle is a fixture.** `LEDGER` in `fixtures/scenario.js` stands in for a billing system's read API. Swapping it for an HTTP call is one function in `src/verify.js` and touches nothing else — but it is a fixture today.
-- **No LLM in the shipping path.** No OpenRouter credit was available, so extraction runs on deterministic rules and embeddings on a lexical embedder. Both provider paths are written and both fall back automatically. Every run prints which rung it used.
+- **The filmed demo runs no LLM.** Extraction runs on deterministic rules and embeddings on a lexical embedder, and every run prints which rung it used. `src/factcheck.js` *does* adjudicate a claim through a live model and is tested working — but it is **not wired into `npm run demo`**, so what you see filmed is the deterministic path end to end. See the note below.
+- **Fact-checking is built but not yet in the demo flow.** `src/factcheck.js` takes a claim, adjudicates it against the records the agent holds, and returns a verdict, a correction and **the deciding source with its trust score**. It is verified against a live model on a free-text claim no fixture anticipates. What is *not* done is wiring it into the live surface's attack path — so today it is a tested module, not a demonstrated feature, and we would rather say that than imply the demo shows it.
 - **Derivation in the scripted demo is fixture-driven.** The three conclusions are frozen text so the cascade is measured against a known chain. The provenance edges, the traversal, the revocation and the reversal are all real writes and real queries.
 - **Re-derivation is not built.** Immune diagnoses and undoes; it does not rebuild the correct conclusions afterwards. That is the right v2 and it did not fit in three and a half hours.
 - **Trust is per-source, not per-source-per-subject.** A source that lies about refunds loses credibility about shipping too. Correct for the demo, too blunt for production.
