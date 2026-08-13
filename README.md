@@ -138,8 +138,8 @@ That is the argument in one screen. If revocation lived in a prompt or in an
 orchestrator's working state, a second agent would go on believing the lie until
 somebody thought to tell it. Because the revocation is a **write**, every process
 on the cluster learns at the same moment — including ones that were not running
-when it happened, since `npm run watch --resume` replays from a stored token and
-`--since=120` replays from the oplog directly.
+when it happened, since `npm run watch -- --resume` replays from a stored token
+and `npm run watch -- --since=120` replays from the oplog directly.
 
 Then `npm run cold`: a **fresh process**, nothing in context, and the same
 channel sends the same lie again. The write still succeeds — we don't block
