@@ -79,14 +79,30 @@ those two have completely different fixes.
 
 ### 1.1 Prerequisites
 
-| Need | Check | If missing |
-| --- | --- | --- |
-| Node **20+** | `node -v` | [nodejs.org](https://nodejs.org) LTS, or `winget install OpenJS.NodeJS.LTS` |
-| git | `git --version` | `winget install Git.Git` |
-| A terminal | PowerShell on Windows, any shell elsewhere | — |
+| Need | Check | Windows | macOS |
+| --- | --- | --- | --- |
+| Node **20+** | `node -v` | `winget install OpenJS.NodeJS.LTS` | `brew install node` |
+| git | `git --version` | `winget install Git.Git` | `xcode-select --install` |
+| A terminal | — | PowerShell | Terminal / iTerm |
 
 Node 18 will *appear* to work and then fail on `AbortSignal.timeout` in the
 ElevenLabs path. Check the version, don't assume.
+
+**Two of us are on Macs and one is on Windows, and the repo is written for
+that.** Nothing here is Windows-only:
+
+- **Audio** (`IMMUNE_VOICE=1`) uses `afplay` on macOS, WPF `MediaPlayer` on
+  Windows, and `ffplay`/`mpg123`/`paplay` on Linux — `src/voice.js` picks per
+  platform and falls through to printing the line if none is present. `afplay`
+  ships with macOS; there is nothing to install.
+- **Paths** are all `node:path`-resolved, so a clone at `~/immune` works the
+  same as one at `C:\Users\…\immune`.
+- **Copy commands**: use `cp .env.example .env` on macOS, `Copy-Item
+  .env.example .env` in PowerShell. Everything else in this document is
+  identical on both.
+- **The one real difference** is the venue-networking firewall step in §6,
+  which is Windows-specific. macOS will show its own "allow incoming
+  connections" prompt the first time you run `npm run live` — say yes.
 
 ### 1.2 Clone and install
 
@@ -165,7 +181,7 @@ before you write code.**
 | --- | --- | --- |
 | `querySrv ECONNREFUSED` / `ENOTFOUND _mongodb._tcp` | The network refuses DNS SRV lookups. Extremely common on venue and conference wifi, and it happens while ordinary browsing works fine | Nothing to do — `src/db.js` already falls back to `MONGODB_URI_DIRECT` automatically. Just make sure that variable is **not empty**. Do **not** add `dns.setServers()` to application code: it is an environment fault, and it looks strange to a judge reading the repo |
 | `bad auth : authentication failed` | Password wrong, or `.env` still has the `<password>` placeholder | Re-paste from `team-env.txt`. Check for a stray quote or a trailing space |
-| `connection timed out` on every host | Your IP is not on the Atlas allowlist | Atlas → Network Access → Add IP → `0.0.0.0/0`. Ask Lane A; it takes ~30 seconds to take effect. **Your IP changes when you join venue wifi**, so this can pass at home and fail at Pier 48 |
+| `connection timed out` / `Server selection timed out` on every host | Your IP is not on the Atlas allowlist | Atlas → **Network Access** → Add IP Address → **Allow access from anywhere** (`0.0.0.0/0`) → Confirm. Takes ~30 seconds to apply. **Your IP changes when you join venue wifi**, so this passes at home and fails at Pier 48. It is also what the hosted Vercel deployment needs, since serverless functions have no fixed IP |
 | `2 connection candidates` but both fail | `.env` not found | You are in the wrong directory. `.env` goes in `immune/`, next to `package.json` |
 | `vector index NOT READY` | It is still building | Wait. It takes **~40 seconds**. Re-run `doctor` |
 | Everything green but `demo` returns nothing | Someone else just ran `npm run reset` | Expected. Re-run `npm run demo` |
