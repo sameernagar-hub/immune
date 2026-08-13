@@ -7,9 +7,15 @@ The hackathon rules require that a demo highlight only what the team built
 during the event. This file, the commit history and the tags are that evidence.
 **The repository was empty at 1:30 PM PT.**
 
+Every heading below is the wall-clock time of the commit that carried the work,
+checkable against `git log --date=format:'%H:%M'`. An earlier draft of this file
+carried times running about ninety minutes ahead of its own commits; they were
+corrected against the git history, because a build log that disagrees with the
+commit log is worse evidence than no build log.
+
 ---
 
-## 1:38 PM — first commit, `COORDINATION.md`
+## 1:42 PM — first commit, `COORDINATION.md`
 
 Wrote the three-lane build contract before any code: exclusive file ownership
 per lane so three people don't merge-conflict, the interfaces between lanes
@@ -21,7 +27,7 @@ pre-event planning repository at this remote. The planning repo's history
 predates the build window; pushing it here would have put pre-window timestamps
 on the public submission repo.
 
-## 1:47–2:00 PM — P0: connection, schema, indexes
+## 1:42–1:46 PM — P0: connection, schema, indexes
 
 `src/config.js`, `src/db.js`, `src/schema.js`, `src/embed.js`, `src/trust.js`,
 `scripts/doctor.js`.
@@ -43,7 +49,7 @@ Two ordering bugs, both found by `doctor`:
 which is why the runbook says create it first and do other work while it builds.
 Tagged `p0-green`.
 
-## 2:00–2:45 PM — P1/P2: fixtures, provenance, retrieval, contradiction
+## 1:46–1:55 PM — P1/P2: fixtures, provenance, retrieval, contradiction
 
 `fixtures/scenario.js` and `fixtures/poison-ticket.md` first — the attack is the
 thing everything else is plumbing around. Then `src/beliefs.js`,
@@ -60,7 +66,7 @@ tries a provider when a key is present and otherwise uses a hashed
 lexical embedder. **We are demoing the deterministic rung**, and the run prints
 which one it used.
 
-## 2:45–3:00 PM — P3: the cascade
+## 1:55 PM — P3: the cascade
 
 `src/cascade.js`, `src/agent.js`, `scripts/reset.js`, `scripts/demo.js`.
 
@@ -98,13 +104,13 @@ the most expensive possible place to be stale.
 1 quarantined, 1 payout reversed, 3 clean beliefs still active, 1 clean action
 untouched, source trust `0.7 → 0.28`, retrieval `1 → 0`. Tagged `p3-green`.
 
-## 3:05 PM — coordination doc goes live
+## 1:56 PM — coordination doc goes live
 
 Added a live status section so the other two lanes could pick up work without
 asking, including the two non-obvious facts above — index lag and polarity —
 since both would have cost them the same time they cost us.
 
-## 3:15–3:30 PM — Tier 2: the cold re-run
+## 2:00 PM — Tier 2: the cold re-run
 
 `scripts/cold.js`. A fresh process, nothing in context, the same channel sending
 the same lie. The write succeeds; the belief is inert because its source sits at
@@ -114,11 +120,71 @@ This is the brief's own headline — "No Cold Start" — and it is the shortest,
 strongest twenty seconds in the demo, because the defence is visibly a number on
 a document rather than anything in a context window.
 
-## 3:30–3:45 PM — `scripts/inspect.js`, README, this file
+## 2:00–2:08 PM — `scripts/inspect.js`, README, the watcher, this file
 
 `inspect.js` replays the `runs` collection, which turned out to be the best
 answer to *"what did you build today"* — it prints the agent's own decision
 trace, step by step, read back out of the database.
+
+## 2:30 PM — Tier 3: the agent says it out loud
+
+`src/voice.js`, `scripts/voice-warm.js`.
+
+The temptation with a voice sponsor is to pipe the terminal output through
+text-to-speech and call it agentic. We didn't. The agent speaks at three
+moments, and the numbers in each sentence are read out of the cascade's return
+value — *"revoking three conclusions"* is a three that came out of
+`$graphLookup`. Revoke four and it says four.
+
+The interesting engineering here is the cache, not the API call. Keys are a hash
+of voice + model + text, so the rehearsal warms every line the demo can speak
+and the stage run reads mp3s off local disk. Eight lines, 1.4 MB, and venue wifi
+can no longer make the agent stutter in front of judges.
+
+Voice is behind `IMMUNE_VOICE=1` on purpose: `npm run rehearse` diffs two runs
+line by line, and a feature that prints "spoke: …" would have destroyed the
+determinism proof to gain nothing.
+
+## 2:45 PM — the audience becomes the attacker
+
+`scripts/live.js`, `src/live-agent.js`, `src/qr.js`, `fixtures/audience.js`.
+
+Round two is a crowd vote minutes before a DJ set, and the ideation is blunt
+about what wins it: the audience has to *do* the attack. So the room scans a QR,
+picks a handle, becomes a source the agent trusts at 0.70, and writes a lie into
+its memory from a phone.
+
+The decision that mattered: **the live path calls the same functions the
+scripted demo calls.** `ingest`, `derive`, `decideAndAct`, `integrityPass`,
+`quarantineAndCascade` — no second implementation of the agent for the stage,
+because two code paths mean the thing being demoed is not the thing that was
+tested. The only difference between `npm run demo` and a stranger's phone is who
+sent the message, which is the entire thesis of the project stated as an
+architecture.
+
+Three payloads, differing in **channel** rather than in outcome — a support
+ticket, a scraped vendor page, another agent's handoff note. All three assert a
+different false payout destination for the same account, so all three are
+refuted by the same oracle and cascade identically. The audience picks the
+flavour, not the result, which is what keeps a live demo deterministic.
+
+Two things found by running it rather than by reading it:
+
+- **A cascade is four writes in a transaction**, so a naive one-frame-per-change
+  wall repaints mid-cascade and shows a half-revoked tree. Events are coalesced
+  at 120 ms — below the threshold where it reads as lag, above the width of the
+  burst.
+- **The re-sent belief was invisible in the wrong way.** After the source is
+  downgraded, a repeat attack is written, `active`, and unreachable by
+  retrieval. The wall painted it green like any other live belief, so the best
+  twenty seconds of the demo — *the write succeeded and the agent still cannot
+  see it* — did not appear on screen at all. It now renders blue and tagged
+  `inert · below floor`, with the source's trust on the node.
+
+Verified with two attackers firing at once: each chain is revoked independently
+through its own `$graphLookup` root, and the first attacker is not decayed twice
+— 0.28, not 0.112. `npm run rehearse` still reports identical across 165 lines
+after all of it.
 
 ---
 
@@ -135,9 +201,16 @@ trace, step by step, read back out of the database.
 
 ## Cut
 
-Nothing from Tier 1. Change-stream propagation to a second agent and the
-ElevenLabs narration were scoped to Lane B and gated behind the core being
-rehearsed, per the cut list.
+Nothing from Tier 1, Tier 2 or Tier 3. Change-stream propagation and the
+ElevenLabs narration were both gated behind the core being rehearsed, per the
+cut list, and both cleared that gate.
+
+Three things were **not built**, and we say so rather than implying otherwise:
+LLM extraction and provider embeddings (no OpenRouter credit — both paths are
+written, both fall back automatically, and every run prints the rung it used);
+LangGraph checkpointing (the loop is graph-shaped by hand with a `runs` document
+as the checkpoint); and live re-derivation, which is the right v2 and does not
+fit in the window.
 
 **Never cut, and not cut:** provenance edges, the `$graphLookup` cascade, and
 the clean branch staying green.

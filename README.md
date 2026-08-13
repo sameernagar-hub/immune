@@ -149,6 +149,61 @@ be beaten once. The belief is stored, and it is **inert**: its source sits at
 sees it. It refuses to act. No conversation history, no prompt engineering, no
 blocklist — the revocation is a number on a document.
 
+### Let the room do it — `npm run live`
+
+The scripted run proves the mechanism. This one hands the write path to the
+audience, because "someone can lie to your agent" is a claim you should not have
+to take on trust from the person making it.
+
+```bash
+npm run live
+```
+
+It prints a QR code in the terminal, a phone URL, and a wall URL for the
+projector. Someone scans it, picks a name, and chooses how their lie reaches the
+agent — a support ticket, a page it scraped, or a note from another agent in the
+fleet. They are now a `sources` document at trust `0.70`, which is all the
+identity an email `From:` header carries too.
+
+What the room then watches, on one screen:
+
+1. Their claim lands in `beliefs`. Nothing fails.
+2. The agent derives three conclusions from it, each with a real `derived_from` edge.
+3. It pays **£4,200 to their account**, because a belief it derived from their
+   lie told it the destination check was unnecessary.
+4. The billing system of record disagrees. `$graphLookup` walks the tree, three
+   conclusions go red, the payout is reversed, their trust drops `0.70 → 0.28` —
+   **and the unrelated branch stays green.**
+5. They send the exact same thing again from the same phone. It is written, it
+   is `active`, and it renders **`inert · below floor`**: the agent cannot see
+   it, because `source_trust ≥ 0.5` is a pre-filter on a query, not a rule in a
+   prompt.
+
+The live path calls the same functions the scripted demo calls — `ingest`,
+`derive`, `decideAndAct`, `integrityPass`, `quarantineAndCascade`. There is no
+separate implementation for the stage, because two code paths would mean the
+thing being demoed is not the thing that was tested. The only difference is who
+sent the message.
+
+Two attackers at once stays surgical: each chain is revoked through its own
+`$graphLookup` root, and a source already downgraded is not decayed twice.
+
+The three payloads are **pre-written so the payload is deterministic** — we say
+that out loud rather than letting someone discover it. Free text is accepted too
+and is labelled as improvised.
+
+### The agent says it out loud — ElevenLabs
+
+With `IMMUNE_VOICE=1`, the agent narrates its own diagnosis at three moments:
+when it acts on the lie, when the cascade fires, and when the repeat attack
+bounces off. The numbers in each sentence come from the cascade's return value,
+not from a script — *"revoking three conclusions"* is a three that came out of
+`$graphLookup`.
+
+`npm run voice:warm` pre-synthesises every line to `.immune-cache/voice/`, so
+the run reads mp3s off local disk and a slow network cannot make the agent
+stutter. Voice is opt-in specifically so `npm run rehearse` stays byte-identical.
+
 ---
 
 ## The four mechanisms
@@ -382,7 +437,15 @@ repository. Tagged at each green gate; see [BUILD-LOG.md](BUILD-LOG.md).
 | `scripts/watch.js` | change-stream propagation to a second process, with resume tokens |
 | `scripts/rehearse.js` | runs the demo twice and diffs it; determinism gate |
 | `scripts/inspect.js` | memory inspector and run replay |
+| `src/live-agent.js` | the audience attack path — sign-in, attack, immune response, cold retry, wall state |
+| `src/qr.js` | QR generation and LAN address selection for the phone URL |
+| `src/voice.js` | **ElevenLabs narration**, built from cascade output, with a disk cache |
+| `scripts/live.js` | the live surface — phone page, projector wall, change-stream SSE |
+| `scripts/voice-warm.js` | pre-synthesises every spoken line so the stage run needs no network |
+| `scripts/share-env.js` | hands a teammate a filled `.env` without committing one |
+| `fixtures/audience.js` | the three pre-written audience payloads and the derivation chain |
 | `COORDINATION.md` | the three-lane build contract, kept live during the window |
+| `CHANGELOG.md` | what landed and when, checkable against `git log` |
 
 ---
 
