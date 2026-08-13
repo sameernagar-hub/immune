@@ -11,6 +11,7 @@
     "doctor": "node scripts/doctor.js",
     "reset": "node scripts/reset.js",
     "demo": "node scripts/demo.js",
+    "watch": "node scripts/watch.js",
     "cold": "node scripts/cold.js",
     "rehearse": "node scripts/rehearse.js",
     "inspect": "node scripts/inspect.js"
