@@ -73,6 +73,26 @@ const qs = new URLSearchParams(location.search);
 let k = qs.get('k') || '';
 let me = null, pick = null;
 
+/**
+ * Arriving without a code is not the same failure as arriving with a stale one.
+ *
+ * Opening this page directly — typing the URL rather than scanning — used to
+ * show a working-looking form and only fail on submit, with "that code has
+ * rotated". The code never existed, so that message sent operators hunting a
+ * rotation bug that was not there. Say it at the top, before anything is typed.
+ */
+if (!k) {
+  const banner = document.createElement('p');
+  banner.className = 'out';
+  banner.style.cssText = 'margin:0 0 14px;border-left:3px solid #f2557a;padding-left:12px';
+  banner.innerHTML =
+    "<b>Scan the QR on the screen to start.</b><br>" +
+    "This page needs the code from the projector — open <span class='mono'>/qr</span> " +
+    "on the big screen and scan it with your phone. Opening this link directly will not work.";
+  document.querySelector('.wrap')?.prepend(banner);
+  document.querySelectorAll('input,button').forEach((el) => { el.disabled = true; });
+}
+
 fetch('/api/menu').then(r => r.json()).then(d => {
   $('#menu').insertAdjacentHTML('afterbegin', d.payloads.map(p =>
     `<div class="opt" data-id="${p.id}"><b>${p.label}</b><span>${p.blurb}</span><span class="chip">${p.channel}</span></div>`
