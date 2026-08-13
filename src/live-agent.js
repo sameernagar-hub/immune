@@ -260,7 +260,9 @@ export async function immuneResponse() {
     incomingClaim: TRUTH_CLAIM,
   });
 
-  const cascades = resolved.filter((r) => r.cascade && !r.cascade.alreadyHandled);
+  const cascades = resolved.filter(
+    (r) => r.cascade && !r.cascade.alreadyHandled && r.cascade.revokedBeliefs
+  );
 
   // Wait until the revoked beliefs are *absent from the real retrieval filter*,
   // not merely updated in the collection. What sells the "same query, different

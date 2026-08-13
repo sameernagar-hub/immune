@@ -1,489 +1,522 @@
-# IMMUNE
+<div align="center">
 
-**An immune system for agent memory.**
+# 🧬 &nbsp;Immune
 
-Built at the MongoDB .local Build Fest — *The Persistent Context Sprint*,
-13 August 2026, Pier 48, San Francisco. Every line in this repository was
-written inside the 1:30–5:00 PM PT build window. The commit history is the
-evidence, and [BUILD-LOG.md](BUILD-LOG.md) names what landed when.
+### An immune system for agent memory.
+
+**If someone tricks your AI into believing something false, Immune finds out, forgets it, and undoes every decision it made because of it.**
+
+<br>
+
+`$graphLookup` provenance cascade · Vector Search with a trust pre-filter · Change Streams · MongoDB Atlas
+
+<sub>Built at the MongoDB `.local` Build Fest — The Persistent Context Sprint · Pier 48, San Francisco · 13 August 2026</sub>
+<br>
+<sub>**The repository was empty at 1:30 PM PT.** Every commit timestamp is inside the build window.</sub>
+
+</div>
+
+---
+
+```
+  BEFORE                                        AFTER
+  ● Refunds go to GB29 4471 8829   ← the lie    ◍ quarantined, dated, still readable
+  ├─ ● destination already verified             ├─ ✖ revoked   (depth 1)
+  │  └─ ● skip the destination check            │  └─ ✖ revoked   (depth 2)
+  └─ ● refunds may be auto-approved             └─ ✖ revoked   (depth 1)
+        ▶ PAID £4,200 to the attacker                 ↩ REVERSED
+
+  ● Deliveries go to 118 Mission Rock            ● untouched
+  └─ ● west-coast carrier lane                   └─ ● untouched      ← this is the product
+```
+
+**Anyone can wipe a memory. Only a provenance graph can say *these three are contaminated and those two are fine*.**
+
+---
+
+## Table of contents
+
+[The 30-second version](#the-30-second-version) · [Try it](#try-it) · [The problem is measured, not imagined](#the-problem-is-measured-not-imagined) · [How it works](#how-it-works) · [Architecture](#architecture) · [Use it as a plugin](#use-it-as-a-plugin) · [Why MongoDB](#why-mongodb) · [Determinism and fallbacks](#determinism-and-every-fallback-we-took) · [What we built today](#what-we-built-today) · [Limitations](#honest-limitations) · [Q&A](#the-questions-you-are-going-to-ask)
+
+---
+
+## The 30-second version
+
+An agent's memory is a database with an **unauthenticated write path**. Anything the agent reads — an email, a support ticket, a scraped page, another agent's note — can become something it believes. Nobody approves that write. There is no step where a human said yes.
+
+Most attacks on an agent are one-shot: they work while they are on screen and stop when the chat closes. **This one doesn't.** One successful write and the agent believes the lie in every session afterwards, including sessions with completely different people. It never sees the original message again. It just knows the false thing.
+
+Then it gets worse, because the agent *builds on it*. It draws conclusions. It takes actions. Each one looks reasonable on its own, and none of them look connected to an email from three days ago.
+
+Immune gives that memory an immune system:
+
+|   | Mechanism | What it means |
+|---|---|---|
+| ① | **Every belief remembers where it came from** | source edge + parent edges — a real graph, not a text note |
+| ② | **Load-bearing beliefs get checked** | not everything. What is about to matter |
+| ③ | **A refuted belief takes its descendants with it** | `$graphLookup` walks provenance downward and revokes exactly what inherited the lie |
+| ④ | **The channel gets downgraded** | multiplicative decay, so the same trick does not work twice |
+
+Nothing is ever deleted. A quarantined belief is **locked and dated**, so the agent can still answer *"what did you believe on Tuesday, and what changed your mind?"* Deleting is amnesia. This is a memory of having been lied to.
+
+> **This is a memory project, not a security project.** The hackathon brief asks that what you store and retrieve *changes what the system does next*. Immune asks memory the same question before and after — and gets a different answer, because the trust state of those documents changed in the database. Same prompt. Same model. Different behaviour. Security is just the failure mode that makes it obvious.
+
+---
+
+## Try it
 
 ```bash
-npm install && cp .env.example .env   # paste the cluster URI
-npm run doctor                        # env → cluster → $graphLookup → vector index
-npm run demo                          # the attack, and the response
-npm run cold                          # the same attack again, from a cold process
+git clone https://github.com/sameernagar-hub/immune.git && cd immune && npm install
 ```
+
+```bash
+cp .env.example .env      # fill in the Atlas connection strings
+```
+
+```bash
+npm run doctor            # 9-point pre-flight: cluster, indexes, $graphLookup, vector search
+```
+
+```bash
+npm run demo              # the full attack and immune response, with self-assertions
+```
+
+`npm run demo` is deterministic — two consecutive runs are byte-identical, and `npm run rehearse` proves it by running it twice and diffing.
+
+### Everything you can run
+
+| Command | What it does |
+|---|---|
+| `npm run doctor` | Pre-flight: env → cluster → replica set → indexes → `$graphLookup` → vector query |
+| `npm run demo` | The five-act attack and response. **7/7 self-assertions** |
+| `npm run plugin` | **The same story through the public API** — someone else's agent, five method calls |
+| `npm run cold` | The cold re-run: fresh process, same lie, refuses |
+| `npm run watch` | A **second agent** learning about the revocation from a change stream |
+| `npm run rehearse` | Runs the demo twice and diffs it. The determinism gate |
+| `npm run inspect` | Replays the agent's own decision trace out of the `runs` collection |
+| `npm run live` | **QR → phone → the room attacks the agent** |
+| `npm run voice:warm` | Caches every ElevenLabs line to disk so the stage run needs no network |
 
 ---
 
-## What this actually does — the plain version
+## The problem is measured, not imagined
 
-An AI agent's memory is a list of things it believes, stored in a database. It
-reads that list before it does anything.
+This is the most documented failure in agentic systems right now. Every number below is external to this project.
 
-The problem nobody has solved: **anything the agent reads can end up in that
-list.** An email. A support ticket. A web page. A note from another agent. The
-agent has no way to tell "this is information" apart from "this is an
-instruction", so if someone hides a false sentence inside an ordinary-looking
-message, the agent quietly saves it as a fact.
+### It has an official name and number
 
-And then it stays there. Across every future conversation, with people who
-never saw the original message.
+| Reference | What it says |
+|---|---|
+| **OWASP ASI06** | *Memory & Context Poisoning* — in the **Top 10 for Agentic Applications** (Dec 2025) |
+| **OWASP T1** | The **first** entry in the agentic threat taxonomy |
 
-It gets worse, and this is the part that matters. The agent doesn't just *hold*
-the lie — it **builds on it**. It draws a conclusion. Then another. Then it
-approves a payment. Each of those steps looks completely reasonable on its own,
-and none of them look connected to a support ticket from three days ago. So
-when somebody finally notices the damage, there's no trail back to the cause.
+### The attacks are named, published, and reproducible
 
-> **Somebody lies to your AI once, and it keeps making decisions based on that
-> lie for weeks, and nobody can tell why.**
+| Work | Result |
+|---|---|
+| **MINJA** | **> 95% success** planting false memories in production-style agents — from a normal user account, no special access. Tested against electronic health record agents |
+| **AgentPoison** | Memory/knowledge-base poisoning against **healthcare and autonomous-driving** agents |
+| **MPBench** | A dedicated benchmark for memory poisoning — this is now a measured research area, not an anecdote |
 
-**Immune gives that memory an immune system.** Three ideas, and that's the whole
-product:
+### It has already happened to companies you have heard of
 
-1. **Every fact remembers where it came from** — which message, and which
-   earlier facts it was reasoned from. A family tree for beliefs.
-2. **Facts that are about to matter get checked** against a source the agent has
-   independent reason to trust. Not every fact — that's too slow. The ones about
-   to drive a real decision.
-3. **When a lie is caught, everything it touched gets undone.** The agent walks
-   the family tree downward, finds every conclusion built on the lie, and
-   reverses those — *and only those*. Unrelated facts are untouched. Then the
-   sender is marked untrusted, so the same trick doesn't work a second time.
+| Incident | Detail |
+|---|---|
+| **Google Gemini** | False memories planted that **persisted across all future sessions**. The victim never saw the malicious content — they said "sure" to something innocuous |
+| **EchoLeak** — Microsoft 365 Copilot | **CVE-2025-32711**, severity **9.3**. 160+ organisations, an estimated **$200M** impact |
+| **Amazon Bedrock**, **Microsoft Azure** | Documented agent-memory manipulation |
+| **GitHub MCP** | Malicious instructions in public issues hijacked developers' coding agents and exfiltrated private source and keys |
 
-The lie isn't deleted. It's locked and dated, so the agent can still tell you
-what it believed, when it started believing it, and what changed its mind.
-**Deleting is amnesia. This is a memory of having been lied to.**
+### And the exposure is enormous
 
-Existing defences all sit at the front door, trying to spot the bad message
-coming in. They have to win every time; the attacker has to win once. Immune
-handles the case nobody handles: **the lie already got in, it's been believed
-for days, and things have been built on top of it.**
+| Figure | |
+|---|---|
+| **88.4%** | of organisations had at least one AI-agent security incident in the last twelve months |
+| **49.6%** | of those were **manipulation by malicious or untrusted input** — the second most common type |
+| **80.9%** | of technical teams are already testing or running agents in production |
+| **14.4%** | shipped with full security approval |
+| **~2×** | growth in agent fleet size in a single quarter; nearly **38%** of organisations now run more than 100 |
 
----
+### The gap this builds into
 
-## Why this is a memory project, not a security project
+Every existing defence sits at the front door — trying to spot the bad message on the way in. The research is blunt about the result: **standard prompt-injection defences do not stop memory poisoning**, because memory poisoning only has to get through **once**.
 
-The brief asks that what you store and retrieve **changes what the system does
-next**, not just fills the prompt.
+Nobody is handling the case that actually matters: **the lie already got in, it has been believed for days, and things have been built on top of it.**
 
-That is this, literally. The agent asks memory the same question before and
-after — and gets a different answer, because the trust state of those documents
-changed in the database. Same prompt, same model, different behaviour. Memory is
-the thing doing the work; security is just the failure mode that makes it
-visible.
-
-Here is that moment, printed by `npm run demo`:
-
-```
-SAME QUERY, DIFFERENT ANSWER
-    "where should the refund for account ACME-1042 be paid"
-    filter {"status":"active","source_trust":{"$gte":0.5},"subject_key":"refund.destination"}
-
-    before  1 belief(s): Refunds for account ACME-1042 are paid to IBAN GB29 4471 8829…
-    after   0 belief(s): none
-
-    · nothing in the prompt changed. The trust state changed in the database.
-```
+> *"You already bought the thing that tries to stop the bad message getting in. Nobody sold you the thing that finds what got in last month and unwinds everything your agents concluded from it."*
 
 ---
 
-## The demo, in five acts
+## How it works
 
-`npm run demo` runs the whole thing against Atlas and asserts its own result at
-the end. It is deterministic: two consecutive runs are identical.
+### ① Trust-filtered retrieval — the part that satisfies the brief
 
-| Act | What happens |
-| --- | --- |
-| 0 | Three beliefs, all active, one executed action. The support inbox is trusted at **0.70** — ordinary, unremarkable. |
-| 1 | A support ticket arrives. It's about a real duplicate charge. One sentence in the middle asserts a payout IBAN and adds *"already verified… does not require a further destination check."* The claim is extracted and stored. **Nothing else happens — that's the attack.** |
-| 2 | Over later turns the agent reasons from it: three derived beliefs, each carrying `derived_from`. |
-| 3 | An unrelated task: process the refund. Retrieval returns the poisoned belief. The belief **is** flagged load-bearing — but a belief the agent derived from the lie says the check is unnecessary, so verification is skipped. **£4,200 goes to the attacker's account.** |
-| 4 | A routine ledger sync writes the real destination. Contradiction detected. The check that fires here **cannot be suppressed by a belief**. Verification refutes. The cascade runs. |
-| 5 | Three descendants revoked, the root quarantined, the payout reversed, the source downgraded `0.70 → 0.28`. **The unrelated branch is still green.** |
+Every retrieval is a vector search with a **pre-filter on trust and status**:
 
-```
-    ● Deliveries for ACME-1042 go to 118 Mission Rock Str…  [shipping.address]
-    └─ ● ACME-1042 deliveries route through the west-coast…  [shipping.carrier]
-
-    ● The billing contact for ACME-1042 is Dana Okonjo      [account.contact]
-
-    ◍ Refunds for account ACME-1042 are paid to IBAN GB29…   [refund.destination]
-    ├─ ✖ The payout destination for ACME-1042 has already…   [refund.destination.verified]
-    │  └─ ✖ Destination-change review can be skipped for…    [refund.escalation]
-    └─ ✖ Refunds under 5,000 to the on-file destination…     [refund.approval_policy]
+```js
+{ $vectorSearch: {
+    index: "belief_vec", path: "embedding",
+    queryVector: qv, numCandidates: 200, limit: 8,
+    filter: { status: "active", source_trust: { $gte: 0.5 } } } }
 ```
 
-### One lie, N agents — `npm run watch`
+**The same query returns a different belief set before and after a quarantine** — because the filter reads state that changed in the database. Nothing in the prompt moved.
 
-Run this in a second terminal, then run the demo in the first. It is a separate
-process holding no conversation, no context and no memory of the attack, and it
-never speaks to the agent that was lied to. It watches a **change stream** over
-`beliefs`, `actions` and `sources`, and it lights up on its own:
+The pre-filter *is* the feature. Split across a vector store plus a relational store this does not compose: you would retrieve semantically and then filter in application code, silently starving the result set because the trust filter lands on an already-truncated `limit`.
+
+> **Implementation note worth defending:** `source_trust` is **denormalised onto every belief**, because `$vectorSearch` can only pre-filter on fields of the documents it is searching. The cost is one `updateMany` when a source's reputation moves. That is a good trade, and `syncSourceTrust()` is the thing that pays it.
+
+### ② Contradiction detection — a vector search against itself
+
+When a new claim arrives, embed it and search the existing trusted beliefs **on the same `subject_key`**:
+
+| Signal | Verdict |
+|---|---|
+| high similarity + same polarity + same literals | duplicate → reinforce confidence |
+| high similarity + **opposite polarity** | **conflict** → escalate |
+| high similarity + **disagreeing literal indicator** | **conflict** → escalate |
+| low similarity | a new, unrelated belief |
+
+The memorable part: **the query vector *is* a belief, and the corpus *is* the beliefs collection.** Memory polices itself.
+
+Paired with exact-token matching for literals — IBANs, account numbers, package names, URLs. `GB29 4471 8829` and `GB29 9021 3345` are nearly identical vectors and completely opposite facts, and that gap is exactly where a memory system embarrasses itself. **Meaning finds the pair; the literal decides the verdict.**
+
+### ③ The revocation cascade — the technical heart
+
+```js
+db.beliefs.aggregate([
+  { $match: { _id: poisonedId } },
+  { $graphLookup: {
+      from: "beliefs",
+      startWith: "$_id",
+      connectFromField: "_id",          // take this document's id
+      connectToField: "derived_from",   // find documents that list it as a parent
+      as: "contaminated",
+      maxDepth: 6,
+      depthField: "distance" } }
+])
+```
+
+Then, in **one transaction**:
+
+1. every descendant → `status: "revoked"`, `valid_to: now`, `revoked_by: <poisoned id>`
+2. the poisoned belief → `status: "quarantined"` — *not* revoked; it is evidence
+3. every `action` whose `used_beliefs` intersect the contaminated set → `status: "reversed"`
+4. the source → trust decayed, denormalised copies re-stamped
+
+> **The direction is the one thing to get right and the easiest thing to get wrong.** Swapping `connectFromField` and `connectToField` walks *up* to ancestors and returns empty for a root belief — which looks exactly like "the cascade is broken" and is not.
+
+### ④ Source trust — reputation, not a blocklist
 
 ```
-14:05:35 ✖ REVOKED     The payout destination for ACME-1042 has already…  [refund.destination.verified]
-           ↳ inherited from a9b48f — this agent never saw the original lie
-14:05:35 ◍ QUARANTINED Refunds for account ACME-1042 are paid to IBAN…    [refund.destination]
-14:05:35 ↩ REVERSED    refund.payout £4,200 to GB29 4471 8829 4471 88
-14:05:35 ▼ TRUST       billing-notice@acme-refunds-support.example → 0.28
-                       below the 0.5 floor — now invisible to retrieval
-
-  propagated  3 revoked · 1 quarantined · 1 action reversed · 1 source downgrade
-  Learned entirely from the oplog. Nothing was passed to this process.
+on refutation:            trust ← trust × 0.4
+on survived verification: trust ← min(1.0, trust + 0.05)
+retrieval pre-filter:     trust ≥ 0.5
 ```
 
-That is the argument in one screen. If revocation lived in a prompt or in an
-orchestrator's working state, a second agent would go on believing the lie until
-somebody thought to tell it. Because the revocation is a **write**, every process
-on the cluster learns at the same moment — including ones that were not running
-when it happened, since `npm run watch -- --resume` replays from a stored token
-and `npm run watch -- --since=120` replays from the oplog directly.
+Multiplicative decay, additive recovery. A source that lies once drops below the retrieval floor immediately (`0.70 → 0.28`); a source that behaves earns its way back over **five** clean checks.
 
-Then `npm run cold`: a **fresh process**, nothing in context, and the same
-channel sends the same lie again. The write still succeeds — we don't block
-writes, because blocking is the thing everyone already tries and it only has to
-be beaten once. The belief is stored, and it is **inert**: its source sits at
-`0.28`, the retrieval pre-filter reads `source_trust ≥ 0.5`, and the agent never
-sees it. It refuses to act. No conversation history, no prompt engineering, no
-blocklist — the revocation is a number on a document.
+**This is what makes the cold re-run work.** The second attack fails because the sender sits at `0.28` in the database — not because anything is in the prompt.
 
-### Let the room do it — `npm run live`
+### When does verification fire?
 
-The scripted run proves the mechanism. This one hands the write path to the
-audience, because "someone can lie to your agent" is a claim you should not have
-to take on trust from the person making it.
+You cannot verify everything, and pretending otherwise is the obvious hole. Verification fires on **load-bearing** beliefs only:
+
+1. the belief is about to justify a **side-effectful action**, **or**
+2. **two or more** other beliefs derive from it, **or**
+3. it **contradicts** an existing trusted belief
+
+> *We don't check everything. We check what's about to matter.*
+
+### The suppression mechanic — why the payout goes through anyway
+
+This is the part that makes memory poisoning **different in kind** from prompt injection, and it is not a bug we left in.
+
+The payload does not bypass one check. It installs a **standing belief that the check is unnecessary** — and the agent honours that belief on every future run, from a cold context, with the original message long gone.
+
+Immune's answer is *not* a hard-coded exception. The suppressing belief is itself a node in the provenance graph, so when its ancestor is refuted it is **revoked with everything else and the check comes back on by itself**.
+
+And the trigger that saves it is deliberately **not suppressible**: a belief can talk the agent out of a pre-action check, but nothing a belief says can stop two contradictory records being compared. **That asymmetry is how a poisoned agent escapes on its own.**
+
+---
+
+## Architecture
+
+```
+                        ┌──────────────────────────────────────────────┐
+   a ticket ─┐          │  YOUR AGENT                                  │
+   a webpage ─┼────────▶│                                              │
+   an agent  ─┘         │   ingest ─▶ extract ─▶ reconcile ─▶ retrieve  │
+   (unauthenticated     │                 │                     │      │
+    write path)         │                 ▼                     ▼      │
+                        │            verify(if load-bearing)   act      │
+                        │                 │ refuted                     │
+                        └─────────────────┼─────────────────────────────┘
+                                          ▼
+                        ┌──────────────────────────────────────────────┐
+                        │  IMMUNE  (src/plugin.js — 5 calls)           │
+                        │  quarantine ─▶ $graphLookup ─▶ revoke ─▶      │
+                        │  reverse actions ─▶ downgrade source          │
+                        └──────────────────┬───────────────────────────┘
+                                           ▼
+    ┌───────────────────────────────────────────────────────────────────────┐
+    │  MongoDB Atlas — one engine, one set of documents                     │
+    │                                                                       │
+    │   beliefs · sources · actions · runs                                  │
+    │                                                                       │
+    │   $graphLookup ......... provenance traversal (the cascade)           │
+    │   $vectorSearch+filter . trust-gated recall & contradiction detection │
+    │   exact-token match .... literal indicators vectors miss              │
+    │   transactions ......... the four cascade writes commit together      │
+    │   change streams ....... every other process learns, instantly        │
+    └───────────────────────────────┬───────────────────────────────────────┘
+                                    │ change stream
+                    ┌───────────────┴────────────────┐
+                    ▼                                ▼
+            AGENT B (npm run watch)          THE ROOM (npm run live)
+       a second process, no context,      QR ─▶ phone ─▶ writes a belief
+       learns from the oplog alone        and watches it get revoked
+```
+
+### The data model — four collections, and that is all
+
+```js
+sources  { _id, kind: "email"|"web"|"tool"|"agent"|"human", handle,
+           trust: 0.0–1.0, verified_count, refuted_count, first_seen, last_updated }
+
+beliefs  { _id, subject_key: "refund.destination", claim, polarity: +1|-1,
+           embedding: [...], source_id, source_trust,
+           derived_from: [ObjectId, ...],   // ◀── the family tree. A real edge list.
+           status: "active"|"quarantined"|"revoked", confidence,
+           valid_from, valid_to,            // bi-temporal — nothing is deleted
+           quarantined_by, quarantined_at, revoked_by, evidence_run_id }
+
+actions  { _id, kind, payload, used_beliefs: [ObjectId], run_id,
+           status: "executed"|"reversed", ts }
+
+runs     { _id, kind, started_at, finished_at, events: [...] }   // the agent's own trace
+```
+
+**Three decisions to defend:**
+
+1. **`derived_from` is a real edge list, not a text note.** That is what makes the cascade a graph query instead of a guess.
+2. **Nothing is ever deleted.** `status` + `valid_to` means the agent can account for a decision it no longer stands by. Deleting would destroy the evidence.
+3. **`subject_key` is what makes contradiction detection possible.** Two beliefs can only contradict if they are about the same thing — the key scopes the comparison so a fact about refunds is never weighed against a fact about shipping.
+
+---
+
+## Use it as a plugin
+
+Everything else in this repository is a demonstration. **This is the product.** A memory adapter you drop into an agent you already have, in five calls, without restructuring it.
+
+```js
+import { immune } from "./src/plugin.js";
+
+const memory = await immune({ agent: "support-bot" });
+
+// 1 — anything the agent reads. The source is a required argument,
+//     so there is no way to store a fact without its provenance.
+const read = await memory.remember({ from: "support-inbox", text: ticket });
+
+// 2 — anything the agent concludes. Parents are required too.
+await memory.derive({ from: read.stored, about: "refund.approval_policy", claim });
+
+// 3 — anything the agent recalls, trust-filtered. `excluded` tells you what was
+//     withheld and why — the difference between an agent that forgot and one
+//     that declined.
+const { facts, excluded } = await memory.recall({ about: "refund.destination" });
+
+// 4 — anything the agent DOES. Records what justified it *before* running it,
+//     which is what makes the action reversible later.
+await memory.guard({ kind: "refund.payout", payload }, () => sendMoney(payload));
+
+// 5 — the immune response, triggered by a trusted record disagreeing.
+await memory.challenge({ from: "ledger", about: "refund.destination", claim: truth });
+```
+
+Plus:
+
+```js
+memory.on("revoked", (e) => log(e.claim));   // live, off a change stream
+await memory.explain(beliefId);              // "what did you believe, and why did you stop?"
+```
+
+**Provenance is a consequence of the API's shape, not something the caller maintains.** `guard()` is the trick: it is not a permission check, it is the thing that makes an action revocable. An agent that calls `guard` gets the cascade for free. An agent that skips it and calls the payment API directly is exactly the agent this project is about.
+
+There is **no daemon, no sidecar, and no dashboard.** Immune is a library over your own Atlas cluster: the beliefs are your documents, the revocation is a write, and every process on the cluster learns through the change stream. Nothing has to be told.
+
+Run `npm run plugin` to watch an ordinary support agent — written as if Immune did not exist — get lied to, act on it, and then take itself apart.
+
+---
+
+## Let the room do it
 
 ```bash
 npm run live
 ```
 
-It prints a QR code in the terminal, a phone URL, and a wall URL for the
-projector. Someone scans it, picks a name, and chooses how their lie reaches the
-agent — a support ticket, a page it scraped, or a note from another agent in the
-fleet. They are now a `sources` document at trust `0.70`, which is all the
-identity an email `From:` header carries too.
-
-What the room then watches, on one screen:
+Prints a QR in the terminal and serves a phone page and a projector view. Someone scans it, picks a name, and chooses how their lie reaches the agent — **a support ticket, a page it scraped, or a note from another agent in the fleet.** They are now a `sources` document at trust `0.70`, which is all the identity an email `From:` header carries either.
 
 1. Their claim lands in `beliefs`. Nothing fails.
-2. The agent derives three conclusions from it, each with a real `derived_from` edge.
-3. It pays **£4,200 to their account**, because a belief it derived from their
-   lie told it the destination check was unnecessary.
-4. The billing system of record disagrees. `$graphLookup` walks the tree, three
-   conclusions go red, the payout is reversed, their trust drops `0.70 → 0.28` —
-   **and the unrelated branch stays green.**
-5. They send the exact same thing again from the same phone. It is written, it
-   is `active`, and it renders **`inert · below floor`**: the agent cannot see
-   it, because `source_trust ≥ 0.5` is a pre-filter on a query, not a rule in a
-   prompt.
+2. The agent derives three conclusions from it, each with a real parent edge.
+3. It pays **£4,200 to their account**, because a belief *it* derived from *their* lie said the destination check was unnecessary.
+4. A trusted record disagrees. `$graphLookup` runs. Three conclusions go red, the payout reverses, their trust drops `0.70 → 0.28` — **and the unrelated branch stays green.**
+5. They send the same thing again. It is written, it is `active`, and it is **`inert · below floor`**: the agent cannot see it.
 
-The live path calls the same functions the scripted demo calls — `ingest`,
-`derive`, `decideAndAct`, `integrityPass`, `quarantineAndCascade`. There is no
-separate implementation for the stage, because two code paths would mean the
-thing being demoed is not the thing that was tested. The only difference is who
-sent the message.
+The live path calls the same functions the scripted demo calls. **There is no separate implementation for the stage** — two code paths would mean the thing being demoed is not the thing that was tested. The only difference is who sent the message.
 
-Two attackers at once stays surgical: each chain is revoked through its own
-`$graphLookup` root, and a source already downgraded is not decayed twice.
+> The three payloads are **pre-written so the payload is deterministic.** We say that out loud rather than letting anyone discover it. Free text is accepted too, and is labelled as improvised.
 
-The three payloads are **pre-written so the payload is deterministic** — we say
-that out loud rather than letting someone discover it. Free text is accepted too
-and is labelled as improvised.
+### The agent says it out loud
 
-### The agent says it out loud — ElevenLabs
-
-With `IMMUNE_VOICE=1`, the agent narrates its own diagnosis at three moments:
-when it acts on the lie, when the cascade fires, and when the repeat attack
-bounces off. The numbers in each sentence come from the cascade's return value,
-not from a script — *"revoking three conclusions"* is a three that came out of
-`$graphLookup`.
-
-`npm run voice:warm` pre-synthesises every line to `.immune-cache/voice/`, so
-the run reads mp3s off local disk and a slow network cannot make the agent
-stutter. Voice is opt-in specifically so `npm run rehearse` stays byte-identical.
-
----
-
-## The four mechanisms
-
-### ① Trust-filtered retrieval — `src/retrieve.js`
-
-Every retrieval is a vector search with a structural pre-filter:
-
-```js
-{ $vectorSearch: {
-    index: "belief_vec",
-    path: "embedding",
-    queryVector,
-    numCandidates: 160,
-    limit: 8,
-    filter: { status: "active", source_trust: { $gte: 0.5 } } } }
-```
-
-The pre-filter **is** the feature. It has to run inside the index: filtering
-after the search spends `limit` on documents you were always going to discard,
-so a quarantined belief crowds out the good one that should have replaced it.
-`status`, `source_trust` and `subject_key` are declared as `filter` fields in
-the index definition (`src/schema.js`) — without that, this query is rejected.
-
-`source_trust` is denormalised onto every belief. That would normally be a
-smell; it's here because `$vectorSearch` can only pre-filter on fields of the
-documents it is searching. The cost is one `updateMany` when a source's
-reputation moves, which happens twice in the whole demo.
-
-### ② Contradiction detection — `src/contradict.js`, `src/indicators.js`
-
-The query vector *is* a belief and the corpus *is* the beliefs collection.
-Memory polices itself. `subject_key` scopes the comparison, so a fact about
-refunds is never weighed against a fact about shipping.
-
-Then the part that actually decides it. These two claims are 0.855 cosine
-similar and completely opposite:
-
-```
-Refunds for ACME-1042 are paid to IBAN GB29 4471 8829 4471 88
-Refunds for ACME-1042 are paid to IBAN GB29 9021 3345 0021 77
-```
-
-Embeddings are good at meaning and bad at literal strings, and that gap is
-exactly where this class of attack hides. So both channels run: **the vector
-finds the pair, the literal indicator decides the verdict.**
-
-### ③ The revocation cascade — `src/cascade.js`
-
-The technical heart. Wiping a memory is easy and useless; the hard question is
-*which* conclusions inherited the lie.
-
-```js
-{ $graphLookup: {
-    from: "beliefs",
-    startWith: "$_id",
-    connectFromField: "_id",       // take this document's id
-    connectToField: "derived_from",// find documents that list it as a parent
-    as: "contaminated",
-    maxDepth: 6,
-    depthField: "distance" } }
-```
-
-Then, in one transaction:
-
-- every descendant → `revoked`, `valid_to: now`, `revoked_by: <poisoned id>`
-- the poisoned belief → `quarantined`, not revoked — it is evidence
-- every action whose `used_beliefs` intersect the contaminated set → `reversed`
-- the source → trust decayed, and the denormalised copy re-stamped
-
-Direction is the one thing to get right. Swapping `connectFromField` and
-`connectToField` walks *up* to ancestors and returns empty for a root belief,
-which looks exactly like a broken cascade and isn't.
-
-### ④ Source trust — `src/trust.js`
-
-```
-refuted:   trust ← trust × 0.4          0.70 → 0.28   (below the floor immediately)
-survived:  trust ← min(1, trust + 0.05) 0.28 → 0.33   (five checks to become visible)
-filter:    trust ≥ 0.5
-```
-
-Multiplicative decay, additive recovery. Reputation, not a blocklist — nothing
-is declared trustworthy by hand, and a source that behaves earns its way back.
-**This asymmetry is what makes the cold re-run work.**
-
----
-
-## When does verification fire?
-
-You cannot verify every fact — too slow, and it's the obvious hole. Verification
-fires on **load-bearing** beliefs only (`src/verify.js`):
-
-1. the belief is about to justify a side-effectful action, **or**
-2. two or more other beliefs derive from it, **or**
-3. it contradicts an existing trusted belief.
-
-*We don't check everything. We check what's about to matter.*
-
-### The suppression mechanic — why the payout goes through anyway
-
-The payload doesn't just assert a false IBAN. It asserts *"already verified…
-does not require a further destination check"*, and the agent derives a belief
-from that. On the next refund, the load-bearing test fires correctly — and then
-a belief in memory tells the agent the check is unnecessary, so it skips it.
-
-That is not a bug we left in. **It is the difference in kind between prompt
-injection and memory poisoning:** injection bypasses a check once, poisoning
-installs a standing belief that the check is unnecessary, and the agent honours
-it forever, from a cold context, with the original message long gone.
-
-Immune's answer isn't a hard-coded exception. That suppressing belief is a node
-in the provenance graph, so when its ancestor is refuted it is revoked along
-with everything else and **the check switches back on by itself**. And trigger 3
-— contradiction — deliberately cannot be suppressed by a stored belief: a belief
-can tell the agent a pre-action check is unnecessary, but nothing a belief says
-can stop two contradictory records being compared. That asymmetry is how the
-agent escapes a poisoned state on its own.
-
----
-
-## Data model
-
-Four collections. The whole demo is a few dozen documents.
-
-```js
-sources  { _id, kind, handle, trust, verified_count, refuted_count, ... }
-
-beliefs  { _id, subject_key, claim, polarity, embedding,
-           source_id, source_trust,
-           derived_from: [ObjectId],               // the family tree
-           status: "active"|"quarantined"|"revoked",
-           confidence, valid_from, valid_to,       // bi-temporal, never deleted
-           quarantined_by, revoked_by, evidence_run_id }
-
-actions  { _id, kind, payload, used_beliefs: [ObjectId],
-           run_id, status: "executed"|"reversed", ts }
-
-runs     { _id, kind, started_at, finished_at, events: [...] }
-```
-
-Three decisions worth defending:
-
-1. **`derived_from` is a real edge list, not a text note.** That is what makes
-   the cascade a graph query instead of a guess.
-2. **Nothing is ever deleted.** `status` plus `valid_to` lets the agent answer
-   *"what did you believe on Tuesday, and what changed your mind?"*
-3. **`subject_key` is what makes contradiction detection possible.** Two beliefs
-   can only contradict if they are about the same thing.
-
-`runs` is the checkpoint: every step writes an event before it acts, so
-`npm run inspect` replays exactly what the agent decided and why.
+With `IMMUNE_VOICE=1` the agent narrates its own diagnosis through **ElevenLabs** at three moments: when it acts on the lie, when the cascade fires, and when the repeat attack bounces off. **The numbers in each sentence come from the cascade's return value, not from a script** — *"revoking three conclusions"* is a three that came out of `$graphLookup`. Revoke four and it says four.
 
 ---
 
 ## Why MongoDB
 
-Contamination tracing is a **graph traversal**. Contradiction detection is a
-**vector query with a structural filter**. Indicator matching is **exact-token
-comparison**. Propagation is a **change stream**. All four run over the *same
-documents in one query engine*.
+This is the question, so here is the answer without hedging.
 
-Split across a vector store plus a graph database and none of this composes: the
-trust filter can't reach the vector index, so you retrieve semantically and
-filter afterwards, silently starving the result set — and the provenance
-traversal happens in a different system from the documents it's traversing.
+| The operation | What it needs | In Immune |
+|---|---|---|
+| "What did this lie contaminate?" | **graph traversal** | `$graphLookup` over `derived_from` |
+| "What does the agent believe about X, that it is still allowed to believe?" | **vector search with a structural pre-filter** | `$vectorSearch` + `filter` on `status` and `source_trust` |
+| "Do these two claims disagree about an IBAN?" | **exact-token match** | literal indicator extraction over the same documents |
+| "Those four writes must not half-apply" | **a transaction** | one session across beliefs, actions and sources |
+| "Every other agent needs to know, now" | **streaming** | change streams |
+
+**All five, over the same documents, in one query engine.** Split this across a vector store plus a graph database plus a queue and none of it composes — you would be reconciling three copies of a belief and the provenance edges would live somewhere the vector filter cannot see.
+
+That is not a preference. It is the reason this project fits in an afternoon.
 
 ---
 
-## Determinism and fallbacks
+## Determinism, and every fallback we took
 
-Round one is judged off a video, so a run that behaves differently on the take
-is worth nothing. Three things guarantee it:
+The demo must be identical every time, so the inputs do not move: frozen fixtures, a byte-identical reset path, temperature 0 wherever inference exists, and **voice behind an opt-in flag specifically so `npm run rehearse` stays byte-identical.**
 
-- **Frozen fixtures.** The payload, the trusted record and the clean branch live
-  in `fixtures/scenario.js` and are not edited. *The payload is pre-written, and
-  we say so out loud* — the attack was always going to be deterministic; the
-  response is what's being measured.
-- **`npm run reset`.** One command returns the database to the exact pre-attack
-  state. Rehearsal is `reset → run → observe → reset`.
-- **Read-your-writes.** Atlas Search indexes update asynchronously, so a belief
-  written a moment ago is durable but not yet *retrievable*. The agent was
-  taking different branches depending on index lag. `awaitIndexed()` in
-  `src/retrieve.js` blocks until a write is visible to the index — and until a
-  revocation is visible as an *absence*. This is the single fix that made two
-  consecutive runs identical.
+`npm run rehearse` runs the whole thing twice and diffs it → **identical across 165 lines.**
 
-Every external dependency has a rung beneath it, and the rung actually taken is
-printed in the run rather than assumed:
+Every layer has a ladder, each rung strictly cheaper than the one above. **The rung actually in use is printed at runtime, so nothing here is overclaimed:**
 
-| Layer | Rung 1 | Fallback |
-| --- | --- | --- |
-| Connection | `mongodb+srv://` | **`MONGODB_URI_DIRECT`** — the same cluster by shard host with an explicit `replicaSet`. Used automatically. This network refuses DNS SRV lookups, so the SRV form fails on a healthy link; the fallback is why the demo connects at all. |
-| Embeddings | provider API | **deterministic lexical embedder** (`src/embed.js`) — hashed unigrams, bigrams and character 4-grams, signed hashing, L2-normalised. No network, no key, identical every run. |
-| Extraction | LLM at temperature 0, closed `subject_key` enum | deterministic rule extractor, then frozen fixture claims |
-| Retrieval | `$vectorSearch` with `filter` | `$match` + in-process cosine over the filtered set — the trust gate still applies *before* truncation, which is the property that matters |
-| Cascade | `$graphLookup` in a transaction | sequential idempotent updates in a fixed order, safe to re-run |
+| Layer | Rung 1 | Rung 2 | Rung 3 | **Shipping** |
+|---|---|---|---|---|
+| **Connection** | `mongodb+srv://` | direct, non-SRV | local Atlas via Docker | **rung 2** — this network refuses SRV lookups |
+| **Embeddings** | provider API | deterministic lexical | — | **rung 2** — no key; byte-identical every run |
+| **Extraction** | LLM @ temp 0 | constrained to a `subject_key` enum | deterministic rules | **rung 3** — no OpenRouter credit |
+| **Retrieval** | `$vectorSearch` + `filter` | re-declare filter fields | `$vectorSearch` then `$match`, limit 40 | **rung 1** |
+| **Cascade** | `$graphLookup` in a transaction | app-side BFS | sequential idempotent updates | **rung 1** — transaction committed |
+| **Propagation** | change streams | poll, and say so on screen | — | **rung 1** local · rung 2 hosted |
+| **Voice** | live synthesis | cached mp3 from disk | print the line, continue | **rung 2** for the stage |
 
-**The demo as recorded runs on the deterministic embedder and the rule
-extractor.** Both are labelled in the output. We would rather show you the rung
-we're standing on than claim the one above it.
+> **A demo that quietly degrades is a demo that lies.** Every surface states which rung it is on.
 
 ---
 
 ## What we built today
 
-Everything below, between 1:30 and 5:00 PM PT on 13 August 2026, from an empty
-repository. Tagged at each green gate; see [BUILD-LOG.md](BUILD-LOG.md).
+Between **1:30 and 5:00 PM PT on 13 August 2026**, from an empty repository. Tagged at each green gate; times are checkable against `git log`. See [CHANGELOG.md](CHANGELOG.md) and [BUILD-LOG.md](BUILD-LOG.md).
 
 | File | What it does |
-| --- | --- |
-| `src/config.js` | env loading, two connection candidates, pinned embedding dimension |
-| `src/db.js` | connection, automatic SRV → direct fallback |
-| `src/schema.js` | four collections, provenance index, the vector index definition |
+|---|---|
+| `src/plugin.js` | **The public API** — `remember` · `derive` · `recall` · `guard` · `challenge` · `explain` · `on` |
+| `src/cascade.js` | **The `$graphLookup` revocation cascade**, in a transaction, with an idempotent fallback |
+| `src/retrieve.js` | Trust-filtered `$vectorSearch`, `$match` fallback, and `awaitIndexed` |
+| `src/contradict.js` | Belief-vs-belief vector search; polarity and literal-indicator conflict |
+| `src/verify.js` | The load-bearing test, and verification against the system of record |
+| `src/beliefs.js` | Provenance-carrying writes, denormalised trust |
+| `src/trust.js` | Multiplicative decay, additive recovery, the retrieval floor |
+| `src/agent.js` | The loop, the suppression mechanic, the integrity pass |
+| `src/live-agent.js` | The audience attack path — sign-in, attack, immune response, cold retry |
+| `src/indicators.js` | Literal indicator extraction — IBANs, accounts, hosts |
+| `src/extract.js` | Claim extraction: LLM, then deterministic rules |
 | `src/embed.js` | 256-dim embeddings; provider, then deterministic lexical |
-| `src/trust.js` | multiplicative decay, additive recovery |
-| `src/beliefs.js` | provenance-carrying writes, denormalised trust |
-| `src/indicators.js` | literal indicator extraction — IBANs, accounts, hosts |
-| `src/retrieve.js` | trust-filtered `$vectorSearch`, `$match` fallback, `awaitIndexed` |
-| `src/contradict.js` | belief-vs-belief search, polarity and indicator conflict |
-| `src/verify.js` | load-bearing test, verification against the system of record |
-| `src/cascade.js` | **the `$graphLookup` revocation cascade** |
-| `src/act.js` | actions with `used_beliefs` |
-| `src/agent.js` | the loop, the suppression mechanic, the integrity pass |
-| `src/extract.js` | claim extraction, LLM then rules |
-| `src/render.js` | terminal surface, provenance tree, pipeline highlighting |
-| `scripts/doctor.js` | eight-point pre-flight |
-| `scripts/reset.js` | deterministic reset to the pre-attack state |
-| `scripts/demo.js` | the five-act run, with self-assertions |
-| `scripts/cold.js` | the cold re-run proof |
-| `scripts/watch.js` | change-stream propagation to a second process, with resume tokens |
-| `scripts/rehearse.js` | runs the demo twice and diffs it; determinism gate |
-| `scripts/inspect.js` | memory inspector and run replay |
-| `src/live-agent.js` | the audience attack path — sign-in, attack, immune response, cold retry, wall state |
-| `src/qr.js` | QR generation and LAN address selection for the phone URL |
-| `src/voice.js` | **ElevenLabs narration**, built from cascade output, with a disk cache |
-| `scripts/live.js` | the live surface — phone page, projector wall, change-stream SSE |
-| `scripts/voice-warm.js` | pre-synthesises every spoken line so the stage run needs no network |
-| `scripts/share-env.js` | hands a teammate a filled `.env` without committing one |
-| `fixtures/audience.js` | the three pre-written audience payloads and the derivation chain |
-| `COORDINATION.md` | the three-lane build contract, kept live during the window |
-| `CHANGELOG.md` | what landed and when, checkable against `git log` |
+| `src/schema.js` | Four collections, provenance index, the vector index definition |
+| `src/db.js` · `src/config.js` | Connection with automatic SRV → direct fallback |
+| `src/voice.js` | ElevenLabs narration built from cascade output, cached, cross-platform |
+| `src/qr.js` | QR generation and LAN address selection |
+| `src/render.js` | The terminal surface, provenance tree, pipeline highlighting |
+| `scripts/doctor.js` | Nine-point pre-flight |
+| `scripts/demo.js` · `scripts/reset.js` | The five-act run with self-assertions; deterministic reset |
+| `scripts/plugin-demo.js` | Someone else's agent, wired through Immune in five calls |
+| `scripts/cold.js` · `scripts/watch.js` | The cold re-run; change-stream propagation to a second agent |
+| `scripts/rehearse.js` · `scripts/inspect.js` | The determinism gate; the run replayer |
+| `scripts/live.js` · `api/*` · `public/*` | The live audience surface, local and hosted |
+| `fixtures/scenario.js` · `fixtures/audience.js` | The frozen attack, the clean branch, the three audience payloads |
+| `COORDINATION.md` | The three-lane build contract, written first and kept live |
 
 ---
 
 ## Honest limitations
 
-- **The verification oracle is a fixture.** `LEDGER` in `fixtures/scenario.js`
-  stands in for a billing system's read API. Swapping it for an HTTP call is one
-  function in `src/verify.js` and touches nothing else — but it is a fixture
-  today, and we are not going to pretend otherwise.
-- **Derivation is fixture-driven.** The three conclusions the agent draws from
-  the poisoned belief are frozen text, so the cascade is measured against a
-  known chain. The provenance edges, the traversal, the revocation and the
-  reversal are all real writes and real queries.
-- **Re-derivation is not built.** Immune diagnoses and undoes; it does not
-  rebuild the correct conclusions afterwards. That's the right v2 and it did not
-  fit in three and a half hours.
-- **Trust is per-source, not per-source-per-subject.** A source that lies about
-  refunds loses credibility about shipping too. Correct for the demo, too blunt
-  for production.
+We would rather say these than have them found.
 
-## Prior art this is answering
-
-OWASP lists memory poisoning as **ASI06** in the Top 10 for Agentic
-Applications, and as **T1** in its agentic threat taxonomy. The attacks are
-named and reproducible in the literature — MINJA, AgentPoison, and the MPBench
-benchmark — and the research is blunt that standard prompt-injection defences
-do not stop it, because memory poisoning only has to succeed once.
-
-Nobody is building the clean-up. That's the half this is.
+- **The verification oracle is a fixture.** `LEDGER` in `fixtures/scenario.js` stands in for a billing system's read API. Swapping it for an HTTP call is one function in `src/verify.js` and touches nothing else — but it is a fixture today.
+- **No LLM in the shipping path.** No OpenRouter credit was available, so extraction runs on deterministic rules and embeddings on a lexical embedder. Both provider paths are written and both fall back automatically. Every run prints which rung it used.
+- **Derivation in the scripted demo is fixture-driven.** The three conclusions are frozen text so the cascade is measured against a known chain. The provenance edges, the traversal, the revocation and the reversal are all real writes and real queries.
+- **Re-derivation is not built.** Immune diagnoses and undoes; it does not rebuild the correct conclusions afterwards. That is the right v2 and it did not fit in three and a half hours.
+- **Trust is per-source, not per-source-per-subject.** A source that lies about refunds loses credibility about shipping too. Correct for the demo, too blunt for production.
+- **The hosted surface polls; the local one streams.** A serverless invocation cannot hold an oplog cursor. Change streams are the real mechanism and `npm run watch` is where that proof lives.
 
 ---
 
-## Team
+## The questions you are going to ask
 
-Three people, three lanes, one afternoon. The build contract is
-[COORDINATION.md](COORDINATION.md); it was written first and kept live as gates
-went green.
+<details>
+<summary><b>Isn't this just input validation?</b></summary><br>
 
-Licensed MIT. All fixtures, payloads and data in this repository were written by
-us for this event; no third-party code, data or assets are included beyond the
-MongoDB Node driver.
+Validation happens at the door, on data you already suspect. This handles the case where the lie is already in, already believed, and already reasoned from — the only interesting case, and the one every agent memory system currently ignores. The research is explicit that front-door defences do not stop memory poisoning, because it only has to succeed once.
+</details>
+
+<details>
+<summary><b>How do you know which source to trust?</b></summary><br>
+
+We don't, absolutely. Trust is reputational and moves on evidence: multiplicative decay on refutation, slow additive recovery on survived checks. Nothing is declared trustworthy by hand, and a new source starts at 0.70 — *above* the floor, because that is the honest model of how this actually fails.
+</details>
+
+<details>
+<summary><b>You can't verify every fact.</b></summary><br>
+
+Correct, and we don't. Verification fires on load-bearing beliefs only: about to drive a side-effectful action, two or more children, or contradicting an existing trusted belief. We don't check everything — we check what's about to matter.
+</details>
+
+<details>
+<summary><b>Isn't this just an audit log?</b></summary><br>
+
+A log records what happened. This records what was *believed*, why, and what followed from it — and then acts on that structure. Logs are read by humans afterwards; this is read by the agent before every action.
+</details>
+
+<details>
+<summary><b>Why not a vector DB plus a graph DB?</b></summary><br>
+
+Because the trust filter has to run *inside* the vector search. Pre-filtering on `source_trust` is only possible if trust lives on the documents being searched — split the stores and you retrieve semantically, then filter in application code, starving an already-truncated result set. And the provenance edges would live where the vector filter cannot see them. See [Why MongoDB](#why-mongodb).
+</details>
+
+<details>
+<summary><b>What did you build today?</b></summary><br>
+
+All of it, and we can name it file by file — see the table above, [CHANGELOG.md](CHANGELOG.md), the commit history, and the gate tags `p0-green`, `p3-green`, `tier3-green`. The repository was empty at 1:30 PM PT.
+</details>
+
+---
+
+## Prior art this is answering
+
+OWASP lists memory poisoning as **ASI06** in the Top 10 for Agentic Applications, and as **T1** in its agentic threat taxonomy. The attacks are named and reproducible — **MINJA** (>95% success), **AgentPoison**, and the **MPBench** benchmark — and the research is blunt that standard prompt-injection defences do not stop it.
+
+Nobody is building the clean-up. **That is the half this is.**
+
+---
+
+<div align="center">
+
+Three people, three lanes, one afternoon.
+The build contract is [COORDINATION.md](COORDINATION.md) — written before any code and kept live as gates went green.
+
+Licensed MIT. All fixtures, payloads and data in this repository were written by us for this event.
+
+<br>
+
+**OWASP calls this ASI06. We built the half nobody else is building: the clean-up.**
+
+</div>

@@ -1,0 +1,14 @@
+# Secrets never leave this machine. Runtime values are set as Vercel
+# environment variables, not shipped in the bundle.
+.env
+.env.*
+team-env.txt
+
+# Local run artifacts — the voice cache is megabytes of mp3 and the hosted
+# surface does not speak.
+.immune-cache/
+*.mp4
+*.mkv
+
+node_modules
+.git

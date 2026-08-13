@@ -24,3 +24,7 @@ Thumbs.db
 .immune-cache/
 *.mp4
 *.mkv
+
+.vercel
+.env*
+!.env.example

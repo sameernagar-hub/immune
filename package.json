@@ -2,7 +2,7 @@
   "name": "immune",
   "version": "0.1.0",
   "private": true,
-  "description": "An immune system for agent memory — provenance-carrying beliefs, trust-filtered retrieval, and a $graphLookup revocation cascade on MongoDB Atlas.",
+  "description": "An immune system for agent memory â€” provenance-carrying beliefs, trust-filtered retrieval, and a $graphLookup revocation cascade on MongoDB Atlas.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -16,6 +16,7 @@
     "rehearse": "node scripts/rehearse.js",
     "inspect": "node scripts/inspect.js",
     "live": "node scripts/live.js",
+    "plugin": "node scripts/plugin-demo.js",
     "voice:warm": "node scripts/voice-warm.js",
     "team:env": "node scripts/share-env.js"
   },
@@ -25,3 +26,4 @@
   },
   "license": "MIT"
 }
+

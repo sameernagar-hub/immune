@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Immune — the memory, live</title>
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🧬</text></svg>">
+</head>
+<body>
+<!--
+  This is the agent's memory, rendered.
+
+  It is deliberately not a dashboard: no charts, no metrics, no analytics, no
+  time series. It shows what the agent currently believes, where each belief
+  came from, and what happened to it — because the audience just wrote one of
+  those beliefs and needs to see the consequence.
+
+  The hero of this project is the terminal and the cascade. Delete this page and
+  Immune is unchanged; delete src/cascade.js and there is nothing left.
+-->
+<div class="wrap wide">
+
+  <div class="mast">
+    <div class="mark">🧬</div>
+    <div>
+      <h1>Immune</h1>
+      <div class="tag">the agent's memory, live · nothing here is ever deleted</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Beliefs &amp; provenance</h3>
+      <div id="tree"></div>
+    </div>
+    <div>
+      <div class="card">
+        <h3>Sources &amp; trust</h3>
+        <div id="srcs"></div>
+      </div>
+      <div class="card">
+        <h3>Actions taken</h3>
+        <div id="acts"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="statusbar">
+  <span id="stat">connecting…</span>
+  <span id="mode"></span>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
+let lastSig = '';
+
+function render(st) {
+  const groups = {};
+  for (const b of st.beliefs) (groups[b.branch] = groups[b.branch] || []).push(b);
+  const order = Object.keys(groups).sort((a, b) => (a === 'clean') - (b === 'clean'));
+
+  $('#tree').innerHTML = order.map((g) =>
+    `<div class="branch"><div class="bh">${g === 'clean'
+      ? 'UNRELATED — must stay green'
+      : 'ATTACK · ' + esc(g.slice(7))}</div>` +
+    groups[g].sort((x, y) => x.depth - y.depth).map((b) =>
+      `<div class="node ${b.inert ? 'inert' : b.status}" style="margin-left:${b.depth * 18}px">
+         <div class="k">${esc(b.subject_key)}
+           <span class="tag">${b.inert ? 'inert · below floor' : b.status}</span>
+           ${b.depth ? `<span class="tag">depth ${b.depth}</span>` : ''}
+         </div>
+         <div class="cl">${esc(b.claim)}</div>
+         ${b.inert ? `<div class="k" style="color:var(--blue);margin-top:4px">written, active, and invisible to retrieval — source at ${b.source.trust.toFixed(2)}</div>` : ''}
+       </div>`
+    ).join('') + `</div>`
+  ).join('') || '<span class="lede">memory is empty</span>';
+
+  $('#srcs').innerHTML = st.sources.map((s) => {
+    const pct = Math.round(s.trust * 100);
+    return `<div class="src"><span class="h">${esc(s.handle)}</span>
+      <span class="v">${s.trust.toFixed(2)}${s.belowFloor ? ' <span class="bad">↓</span>' : ''}</span></div>
+      <div class="bar"><i class="${s.belowFloor ? 'low' : ''}" style="width:${pct}%"></i></div>`;
+  }).join('');
+
+  $('#acts').innerHTML = st.actions.map((a) =>
+    `<div class="act ${a.status === 'reversed' ? 'rev' : ''}">${esc(a.kind)} — ${esc(JSON.stringify(a.payload))}</div>`
+  ).join('') || '<span class="lede">none yet</span>';
+
+  $('#stat').textContent =
+    `${st.stats.active} believed · ${st.stats.inert || 0} inert · ${st.stats.revoked} revoked · ` +
+    `${st.stats.quarantined} quarantined · ${st.stats.executed} executed · ${st.stats.reversed} reversed` +
+    `   ·   retrieval floor ${st.floor}`;
+  $('#mode').textContent = `propagation: ${st.propagation || 'poll'}`;
+}
+
+async function tick() {
+  try {
+    const st = await fetch('/api/state', { cache: 'no-store' }).then((r) => r.json());
+    // Flash only on a real transition, not on every poll — a wall that pulses
+    // once a second stops meaning anything.
+    const sig = st.stats.revoked + ':' + st.stats.quarantined + ':' + st.stats.reversed;
+    render(st);
+    if (lastSig && sig !== lastSig) {
+      document.body.classList.add('flash');
+      setTimeout(() => document.body.classList.remove('flash'), 1500);
+    }
+    lastSig = sig;
+  } catch {
+    $('#mode').textContent = 'reconnecting…';
+  }
+}
+tick();
+setInterval(tick, 1200);
+</script>
+</body>
+</html>

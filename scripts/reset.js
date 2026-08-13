@@ -10,6 +10,7 @@
  * starts from run one's wreckage and you rehearse a state you will never be in
  * on stage.
  */
+import { pathToFileURL } from "node:url";
 import { collections, close } from "../src/db.js";
 import { ensureSchema } from "../src/schema.js";
 import { embed } from "../src/embed.js";
@@ -97,7 +98,17 @@ export async function reset({ quiet = false } = {}) {
   return { sourceIds, beliefIds };
 }
 
-const invokedDirectly = process.argv[1] && process.argv[1].endsWith("reset.js");
+/**
+ * Only auto-run when this file *is* the entry point.
+ *
+ * The previous check was `endsWith("reset.js")`, which is true for the
+ * serverless function at `api/reset.js` as well — so importing `reset()` there
+ * would seed the database and then close the shared connection out from under
+ * every other function on the instance. Comparing resolved URLs is the check
+ * that actually means "was I run directly".
+ */
+const invokedDirectly =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (invokedDirectly) {
   reset()
     .catch((err) => {

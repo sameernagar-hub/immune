@@ -77,33 +77,77 @@ async function synthesise(text) {
 }
 
 /**
- * Play an mp3 without opening a window.
+ * Play an mp3 without opening a window, on whichever machine is driving.
  *
- * WPF's MediaPlayer is the only thing on a stock Windows box that plays mp3
- * headlessly — SoundPlayer is WAV-only and `start` opens a media app over the
- * terminal you are filming.
+ * Three people, two operating systems, one demo — so this cannot assume the
+ * laptop it was written on. Each platform gets the player that is already
+ * installed and does not steal focus, because a media app popping up over the
+ * terminal you are filming is worse than silence:
+ *
+ *   macOS    `afplay` — in the base system, blocks until the clip ends
+ *   Windows  WPF `MediaPlayer` via PowerShell. `SoundPlayer` is WAV-only and
+ *            `start` opens a media app over the shot
+ *   Linux    whatever of `ffplay`/`mpg123`/`paplay` exists; each is tried in turn
+ *
+ * If none of them work the caller still gets a resolved promise and the run
+ * continues on rung 3, which is the line printed to the terminal. Voice must
+ * never be able to fail the demo.
  */
-function play(file) {
-  return new Promise((done) => {
-    const ps = spawn(
+const PLAYERS = {
+  darwin: [["afplay", (f) => [f]]],
+  win32: [
+    [
       "powershell",
-      [
+      (f) => [
         "-NoProfile",
         "-NonInteractive",
         "-Command",
         `Add-Type -AssemblyName presentationCore;` +
           `$p=New-Object System.Windows.Media.MediaPlayer;` +
-          `$p.Open([uri]'${file.replace(/'/g, "''")}');` +
+          `$p.Open([uri]'${f.replace(/'/g, "''")}');` +
           `$n=0; while(-not $p.NaturalDuration.HasTimeSpan -and $n -lt 50){Start-Sleep -m 100;$n++};` +
           `$p.Play();` +
           `if($p.NaturalDuration.HasTimeSpan){Start-Sleep -m ([int]($p.NaturalDuration.TimeSpan.TotalMilliseconds+250))}else{Start-Sleep -m 2500};` +
           `$p.Close()`,
       ],
-      { stdio: "ignore", windowsHide: true }
-    );
-    ps.on("close", () => done());
-    ps.on("error", () => done());
-  });
+    ],
+  ],
+  linux: [
+    ["ffplay", (f) => ["-nodisp", "-autoexit", "-loglevel", "quiet", f]],
+    ["mpg123", (f) => ["-q", f]],
+    ["paplay", (f) => [f]],
+  ],
+};
+
+export function playerFor(platform = process.platform) {
+  return (PLAYERS[platform] ?? PLAYERS.linux)[0]?.[0] ?? "none";
+}
+
+function play(file) {
+  const candidates = PLAYERS[process.platform] ?? PLAYERS.linux;
+
+  const attempt = (i) =>
+    new Promise((done) => {
+      if (i >= candidates.length) return done();
+      const [cmd, argv] = candidates[i];
+      let settled = false;
+      const finish = (retry) => {
+        if (settled) return;
+        settled = true;
+        done(retry ? attempt(i + 1) : undefined);
+      };
+      try {
+        const child = spawn(cmd, argv(file), { stdio: "ignore", windowsHide: true });
+        // ENOENT means "this player is not installed", which is a reason to try
+        // the next one. A non-zero exit means it ran and failed, which is not.
+        child.on("error", () => finish(true));
+        child.on("close", () => finish(false));
+      } catch {
+        finish(true);
+      }
+    });
+
+  return attempt(0);
 }
 
 /**

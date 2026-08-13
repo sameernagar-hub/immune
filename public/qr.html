@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Immune — attack the agent</title>
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🧬</text></svg>">
+</head>
+<body>
+<!--
+  The projector page.
+
+  The code rotates. A static QR on a screen is a URL that everyone who
+  photographed it can still hit an hour later, which is a slightly absurd
+  property for a demo about unauthenticated writes. The token in this code is
+  derived from the current time window, so it expires on its own — and this page
+  re-renders on the same period so what is on the wall always works.
+-->
+<div class="qrpage">
+  <div>
+    <div class="mast" style="justify-content:center">
+      <div class="mark">🧬</div>
+      <div style="text-align:left">
+        <h1>Immune</h1>
+        <div class="tag">an immune system for agent memory</div>
+      </div>
+    </div>
+
+    <h2 class="hero" style="max-width:15ch;margin:14px auto 8px">Lie to the <em>agent</em>.</h2>
+    <p class="lede" style="max-width:44ch;margin:0 auto 26px">
+      Scan it. Write something false into its long-term memory.
+      Then watch it work out that it was lied to — and undo everything it decided because of you.
+    </p>
+
+    <div class="qrbox" id="box"></div>
+    <div class="qrurl" id="url">loading…</div>
+    <div class="rotate">
+      this code expires in <b id="left">–</b>s &nbsp;·&nbsp; it rotates so a photograph of this screen stops working
+    </div>
+
+    <div class="steps">
+      <div class="step"><div class="n">1</div><p>You become a source the agent trusts at <span class="mono">0.70</span>.</p></div>
+      <div class="step"><div class="n">2</div><p>Your claim lands in memory. It reasons three more conclusions from it and pays out.</p></div>
+      <div class="step"><div class="n">3</div><p><span class="mono">$graphLookup</span> walks the provenance graph and revokes every conclusion that inherited your lie.</p></div>
+      <div class="step"><div class="n">4</div><p>Send it again. Same lie, same channel — and it no longer lands.</p></div>
+    </div>
+
+    <p class="foot">MongoDB Atlas · Vector Search · $graphLookup · Change Streams &nbsp;—&nbsp; OWASP ASI06</p>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let left = 0;
+
+async function refresh() {
+  try {
+    const res = await fetch('/api/qr?w=420&t=' + Date.now(), { cache: 'no-store' });
+    const type = res.headers.get('content-type') || '';
+    if (type.includes('svg')) {
+      $('#box').innerHTML = await res.text();
+      left = Number(res.headers.get('x-immune-expires-in') || 90);
+    } else {
+      const j = await res.json();
+      $('#box').innerHTML = '<div style="padding:30px;color:#000;font:14px monospace">QR unavailable</div>';
+      $('#url').textContent = j.url;
+    }
+    const m = await fetch('/api/menu', { cache: 'no-store' }).then((r) => r.json());
+    left = m.qr.expiresIn;
+    $('#url').textContent = location.origin + '/?k=' + m.qr.token;
+  } catch {
+    $('#url').textContent = 'reconnecting…';
+  }
+}
+
+setInterval(() => {
+  left = Math.max(0, left - 1);
+  $('#left').textContent = left;
+  if (left === 0) refresh();
+}, 1000);
+
+refresh();
+</script>
+</body>
+</html>

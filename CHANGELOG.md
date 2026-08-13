@@ -79,9 +79,18 @@ resume token. `package.json` had a duplicate `watch` key after the merge; fixed.
 
 ---
 
-## This session — Tier 3 and the live audience surface
+## Tier 3 and the live audience surface — 14:25–14:47
 
-### 14:30 · ElevenLabs — the agent narrates its own diagnosis
+All of this landed in three commits: `d21b0c8` at **14:42:46**, `146b46b` and
+`12162de` at **14:45:25/26**. The sub-headings below are the working times
+within that stretch; the commit times are the ones to check.
+
+*(An earlier draft of this section carried times running up to ninety minutes
+ahead of those commits — the exact fault it criticises two paragraphs above.
+Corrected against `git log`. Leaving it would have been worse than never having
+written the file.)*
+
+### 14:28 · ElevenLabs — the agent narrates its own diagnosis
 `src/voice.js`, `scripts/voice-warm.js`.
 
 Not a text-to-speech layer over the output. The agent speaks at three moments,
@@ -100,7 +109,7 @@ byte-identical.
 → Playback rung: WPF `MediaPlayer` via PowerShell. `SoundPlayer` is WAV-only and
 `start` opens a media app over the terminal you are filming.
 
-### 14:45 · The live audience attack surface — QR → phone → memory
+### 14:34 · The live audience attack surface — QR → phone → memory
 `scripts/live.js`, `src/live-agent.js`, `src/qr.js`, `fixtures/audience.js`.
 
 Round two is a crowd vote, and the ideation is blunt about what wins it: the
@@ -132,7 +141,7 @@ mid-cascade and show a half-revoked tree. Rung 2 is a 1.5-second poll, and the
 wall states which rung it is on in the corner. A demo that quietly degrades is a
 demo that lies.
 
-### 15:10 · Verified end to end against the sandbox cluster
+### 14:38 · Verified end to end against the sandbox cluster
 
 | Check | Result |
 | --- | --- |
@@ -146,20 +155,20 @@ demo that lies.
 | Garbage input (`hello world`) | ✅ "nothing in that message parses as a factual claim" |
 | `npm run rehearse` after all of the above | ✅ **identical across 165 lines** |
 
-### 15:20 · The inert state, made visible
+### 14:41 · The inert state, made visible
 A belief re-sent by a downgraded source is `active`, undamaged, and invisible to
 retrieval. The wall was painting it green like any other live belief — which
 made the single best twenty seconds of the demo invisible at the moment it
 should be most obvious. It now renders blue, tagged **`inert · below floor`**,
 with the source's trust on the node.
 
-### 15:25 · Credentials, without leaking them
+### 14:43 · Credentials, without leaking them
 `scripts/share-env.js` (`npm run team:env`) writes a filled-in `team-env.txt`
 for a teammate and prints a masked version to the terminal. `team-env.txt` is
 gitignored. The repo is public: an Atlas password in a public commit is burned
 the moment it is pushed, and deleting the file afterwards does not un-burn it.
 
-### 15:30 · Timestamp correction
+### 14:44 · Timestamp correction, and a NUL byte
 `BUILD-LOG.md` and `COORDINATION.md` carried times running roughly ninety
 minutes ahead of the commits that contained the work — a log claiming 3:45 PM
 against a commit at 14:08. Corrected against `git log`. Judges cross-check the

@@ -284,10 +284,17 @@ export async function integrityPass({ runId, subjectKey, incomingClaim, incoming
         reason: `refuted by ${verification.source}: ${verification.detail}`,
       });
       resolved.push({ belief, assessment, verification, cascade });
+      // A belief is quarantined once. When something already handled it, the
+      // cascade returns `{ alreadyHandled }` with no result arrays — reading
+      // `.length` off those was a crash, and the way to reach it is mundane:
+      // the Atlas Search index still lists a just-quarantined belief as active
+      // for a moment, so a second trigger finds it and tries again. That is a
+      // stage-time crash caused by index lag, which is the worst kind.
       await logEvent(runId, "cascade", {
         belief_id: belief._id,
-        revoked: cascade.revokedBeliefs.length,
-        reversed: cascade.reversedActions.length,
+        already_handled: Boolean(cascade.alreadyHandled),
+        revoked: cascade.revokedBeliefs?.length ?? 0,
+        reversed: cascade.reversedActions?.length ?? 0,
       });
     } else {
       resolved.push({ belief, assessment, verification, cascade: null });

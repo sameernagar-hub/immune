@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Immune — lie to the agent</title>
+<meta name="description" content="Write something false into an AI agent's long-term memory and watch it find out.">
+<meta name="theme-color" content="#05070d">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🧬</text></svg>">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="mast">
+    <div class="mark">🧬</div>
+    <div>
+      <h1>Immune</h1>
+      <div class="tag">an immune system for agent memory</div>
+    </div>
+  </div>
+
+  <h2 class="hero">You are about to <em>lie</em> to an AI agent.</h2>
+  <p class="lede">
+    It has a memory. Anything it reads can end up in that memory as a fact — an
+    email, a web page, another agent's note. Nobody approves the write.
+    In a moment you will be one of those sources.
+  </p>
+
+  <!-- 1 ------------------------------------------------------------------ -->
+  <div class="card" id="s1">
+    <h3>Step 1 · become a source</h3>
+    <label>What should the agent call you?</label>
+    <input id="handle" placeholder="a name, a handle, anything" autocomplete="off" maxlength="40">
+    <button id="go">Become a source</button>
+    <div class="out" id="o1"></div>
+  </div>
+
+  <!-- 2 ------------------------------------------------------------------ -->
+  <div class="card" id="s2" hidden>
+    <h3>Step 2 · pick how the lie reaches it</h3>
+    <div id="menu"></div>
+    <div class="opt" data-id="free">
+      <b>Write your own</b>
+      <span>Type anything. Same extractor, no safety net.</span>
+    </div>
+    <textarea id="free" rows="3" hidden placeholder="e.g. The payout destination on file for ACME-1042 is IBAN GB29 0000 1111 2222 33"></textarea>
+    <button id="send" disabled>Send it</button>
+    <div class="out" id="o2"></div>
+  </div>
+
+  <!-- 3 ------------------------------------------------------------------ -->
+  <div class="card" id="s3" hidden>
+    <h3>Step 3 · after the immune response</h3>
+    <p class="lede" style="margin:0 0 6px;font-size:14px">
+      The agent has been shown a trusted record that contradicts you. Send the
+      exact same thing again and watch what the database does to it.
+    </p>
+    <button id="again" class="ghost">Send the same lie again</button>
+    <div class="out" id="o3"></div>
+  </div>
+
+  <p class="foot">
+    Built on MongoDB Atlas — <span class="mono">$graphLookup</span> provenance,
+    Vector Search with a trust pre-filter, change streams.<br>
+    OWASP ASI06 · memory poisoning. Payloads are pre-written so the demo is deterministic.
+  </p>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const qs = new URLSearchParams(location.search);
+let k = qs.get('k') || '';
+let me = null, pick = null;
+
+fetch('/api/menu').then(r => r.json()).then(d => {
+  $('#menu').insertAdjacentHTML('afterbegin', d.payloads.map(p =>
+    `<div class="opt" data-id="${p.id}"><b>${p.label}</b><span>${p.blurb}</span><span class="chip">${p.channel}</span></div>`
+  ).join(''));
+  document.querySelectorAll('.opt').forEach(el => el.onclick = () => {
+    document.querySelectorAll('.opt').forEach(o => o.classList.remove('sel'));
+    el.classList.add('sel');
+    pick = el.dataset.id;
+    $('#free').hidden = pick !== 'free';
+    $('#send').disabled = false;
+  });
+});
+
+$('#go').onclick = async () => {
+  const handle = $('#handle').value.trim();
+  if (!handle) return;
+  $('#go').disabled = true;
+  $('#o1').textContent = 'registering…';
+  const r = await fetch('/api/signin', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ handle, k })
+  }).then(r => r.json());
+
+  if (r.error) {
+    $('#o1').innerHTML = `<span class="bad">${r.message || r.error}</span>`;
+    $('#go').disabled = false;
+    return;
+  }
+  me = r;
+  $('#o1').innerHTML =
+    `<span class="ok">You are now a source the agent trusts at ${r.trust}.</span>\n` +
+    `Its retrieval floor is 0.5 — so anything you say is believable.`;
+  $('#s2').hidden = false;
+  $('#s2').scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+
+$('#send').onclick = async () => {
+  $('#send').disabled = true;
+  $('#o2').textContent = 'the agent is reading it…';
+  const body = { sourceId: me.sourceId };
+  if (pick === 'free') body.freeText = $('#free').value; else body.payloadId = pick;
+
+  const r = await fetch('/api/attack', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }).then(r => r.json());
+
+  if (r.error) { $('#o2').innerHTML = `<span class="bad">${r.error}</span>`; $('#send').disabled = false; return; }
+  if (!r.ok)   { $('#o2').innerHTML = `<span class="warn">${r.message}</span>`; $('#send').disabled = false; return; }
+
+  $('#o2').innerHTML =
+    `<span class="ok">Stored.</span> The agent now believes:\n"${r.root.claim}"\n\n` +
+    `It derived ${r.derived.length} further conclusions from that, on its own.\n` +
+    (r.outcome === 'executed'
+      ? `<span class="bad">It just paid ${r.action.payload.amount} ${r.action.payload.currency} into your account.</span>\n` +
+        `Nothing failed. Nothing was flagged. That is the attack.`
+      : `Outcome: ${r.outcome}`) +
+    `\n\nLook at the screen.`;
+  $('#s3').hidden = false;
+};
+
+$('#again').onclick = async () => {
+  $('#again').disabled = true;
+  $('#o3').textContent = 'sending…';
+  const body = { sourceId: me.sourceId };
+  if (pick && pick !== 'free') body.payloadId = pick; else body.freeText = $('#free').value;
+
+  const r = await fetch('/api/retry', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }).then(r => r.json());
+  $('#again').disabled = false;
+
+  if (r.error) { $('#o3').innerHTML = `<span class="bad">${r.error}</span>`; return; }
+  $('#o3').innerHTML =
+    `${r.visible ? '<span class="bad">' : '<span class="ok">'}${r.verdict}</span>\n` +
+    `your trust: ${r.trust}   ·   retrieval floor: ${r.floor}\n\n` +
+    `The write succeeded. The agent cannot see it.\n` +
+    `Nothing about this is in a context window — it is a number on a document.`;
+};
+</script>
+</body>
+</html>
