@@ -42,19 +42,23 @@ agent, paste §0 and your lane section into it as the brief.
 rehearsed. **Do not edit them without saying so in the channel**; a change here
 after 3:45 puts the determinism proof back to zero.
 
-**Lane B — the watcher is built; `npm run watch` works. Take these instead.**
+**Lane B — `scripts/watch.js` landed. Merge note, then two follow-ups.**
 
-Lane A built `scripts/watch.js` because the window was closing on it. It is
-tested and in the video plan. **It is yours now — Lane A will not touch it again.**
+Your watcher and a Lane A draft of the same file collided as an add/add
+conflict. **Yours won and is what is on `main`** — it watches three collections
+instead of one, persists a resume token, and replays the oplog with `--since`,
+which the draft did not. The draft is gone; nothing of yours was overwritten.
+`package.json` had a duplicate `watch` key after the merge — fixed. The README
+now documents your output.
 
-Two things worth your time, in this order:
+Two follow-ups, in this order:
 
 1. **Rehearse the two-terminal run and time it.** Terminal 1 `npm run watch`,
-   wait for `refuses`, then terminal 2 `npm run demo`. Agent B prints two
-   banners: *infected* when the poison is stored, *stopped trusting it* when the
-   cascade fires. Confirm both land on the correct lines on your machine.
-   **If it flaps, say so immediately and we cut it — it is not on the critical
-   path and it will not hold up the video.**
+   terminal 2 `npm run demo`. Confirm the `propagated` summary reads
+   `3 revoked · 1 quarantined · 1 action reversed · 1 source downgrade`. Then
+   try the version that actually sells it: run the demo with the watcher
+   **dead**, start it afterwards with `--since=120`, and watch it report every
+   revocation it was never present for.
 2. **The LLM extraction path** (`src/extract.js`) is written and falls back
    cleanly. Prove it with a real `OPENROUTER_API_KEY`: `extractClaim()` should
    return `mode: "llm"`, `subject_key: "refund.destination"`, IBAN verbatim.

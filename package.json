@@ -14,7 +14,6 @@
     "watch": "node scripts/watch.js",
     "cold": "node scripts/cold.js",
     "rehearse": "node scripts/rehearse.js",
-    "watch": "node scripts/watch.js",
     "inspect": "node scripts/inspect.js"
   },
   "dependencies": {

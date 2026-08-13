@@ -117,33 +117,29 @@ the end. It is deterministic: two consecutive runs are identical.
 
 ### One lie, N agents — `npm run watch`
 
-Run this in a second terminal before the demo. **Agent B** is a second process
-sharing the same memory. It has never seen the ticket, holds no conversation
-history, and has one standing intent: pay this refund.
+Run this in a second terminal, then run the demo in the first. It is a separate
+process holding no conversation, no context and no memory of the attack, and it
+never speaks to the agent that was lied to. It watches a **change stream** over
+`beliefs`, `actions` and `sources`, and it lights up on its own:
 
 ```
-  ✔ 14:05:32  stored       Refunds for account ACME-1042 are paid to IBA…
-    Agent B has been infected too — and it never saw the ticket.
-    before  ● refuses    no trusted belief for this subject
-    after   ● would pay  based on Refunds … GB29 4471 8829… (trust 0.7)
+14:05:35 ✖ REVOKED     The payout destination for ACME-1042 has already…  [refund.destination.verified]
+           ↳ inherited from a9b48f — this agent never saw the original lie
+14:05:35 ◍ QUARANTINED Refunds for account ACME-1042 are paid to IBAN…    [refund.destination]
+14:05:35 ↩ REVERSED    refund.payout £4,200 to GB29 4471 8829 4471 88
+14:05:35 ▼ TRUST       billing-notice@acme-refunds-support.example → 0.28
+                       below the 0.5 floor — now invisible to retrieval
 
-  ✖ 14:05:35  revoked      The payout destination for ACME-1042 has alre…
-    Agent B just stopped trusting it, and nobody told it to.
-    before  ● would pay  based on Refunds … GB29 4471 8829… (trust 0.7)
-    after   ● refuses    1 recalled, none survived the status and trust check
+  propagated  3 revoked · 1 quarantined · 1 action reversed · 1 source downgrade
+  Learned entirely from the oplog. Nothing was passed to this process.
 ```
 
-Both transitions arrive over a **change stream**, with no bytes passing between
-the two processes. The database is the shared brain — which is also why a
-poisoned fact in shared memory is a shared blast radius, and why the recovery
-has to live there too.
-
-Agent B also shows the discipline that follows from all this: a belief recalled
-by `$vectorSearch` is **re-read from the collection and re-checked** before it
-is allowed to justify anything. Search indexes update asynchronously, so for a
-moment after a revocation the index still returns a belief that is already
-quarantined. Search is recall; the document is the authority. We caught Agent B
-deciding it "would pay" on exactly that stale hit, and this is the fix.
+That is the argument in one screen. If revocation lived in a prompt or in an
+orchestrator's working state, a second agent would go on believing the lie until
+somebody thought to tell it. Because the revocation is a **write**, every process
+on the cluster learns at the same moment — including ones that were not running
+when it happened, since `npm run watch --resume` replays from a stored token and
+`--since=120` replays from the oplog directly.
 
 Then `npm run cold`: a **fresh process**, nothing in context, and the same
 channel sends the same lie again. The write still succeeds — we don't block
@@ -383,7 +379,7 @@ repository. Tagged at each green gate; see [BUILD-LOG.md](BUILD-LOG.md).
 | `scripts/reset.js` | deterministic reset to the pre-attack state |
 | `scripts/demo.js` | the five-act run, with self-assertions |
 | `scripts/cold.js` | the cold re-run proof |
-| `scripts/watch.js` | **Agent B** — a second process on the same memory, via change streams |
+| `scripts/watch.js` | change-stream propagation to a second process, with resume tokens |
 | `scripts/rehearse.js` | runs the demo twice and diffs it; determinism gate |
 | `scripts/inspect.js` | memory inspector and run replay |
 | `COORDINATION.md` | the three-lane build contract, kept live during the window |
