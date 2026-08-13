@@ -1,0 +1,23 @@
+# --- Secrets: never commit ---
+.env
+.env.*
+!.env.example
+*.pem
+
+# --- Node ---
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- Local run artifacts ---
+.immune-cache/
+*.mp4
+*.mkv
