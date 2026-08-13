@@ -174,11 +174,9 @@ function render(change) {
 
   if (coll === "actions") {
     counts.reversed += 1;
-    const detail =
-      doc.payload?.destination ?? doc.payload?.payee ?? JSON.stringify(doc.payload ?? {});
     console.log(
       `${stamp} ${c.red("↩ REVERSED")}    ${c.red(doc.kind ?? "action")} ` +
-        `${c.grey(truncate(String(detail), 46))} ${shortId(doc._id)}`
+        `${c.grey(truncate(describePayload(doc.payload), 46))} ${shortId(doc._id)}`
     );
     console.log(
       `           ${c.grey("↳ stood on a belief that was just revoked")}`
@@ -198,6 +196,34 @@ function render(change) {
           : c.yellow("downgraded"))
     );
   }
+}
+
+/**
+ * Renders an action payload as a human sentence.
+ *
+ * A raw JSON dump is unreadable at video resolution, and this line is on screen
+ * while the narrator says "and the payout it already made is reversed". The
+ * money and where it was going are the only two facts that matter here.
+ */
+const CURRENCY = { GBP: "£", USD: "$", EUR: "€" };
+
+function describePayload(payload = {}) {
+  const parts = [];
+
+  if (payload.amount !== undefined) {
+    const symbol = CURRENCY[payload.currency] ?? "";
+    const amount = Number(payload.amount).toLocaleString("en-GB");
+    parts.push(`${symbol}${amount}${symbol ? "" : ` ${payload.currency ?? ""}`}`.trim());
+  }
+
+  const target = payload.destination_iban ?? payload.destination ?? payload.payee;
+  if (target) parts.push(`to ${target}`);
+
+  if (parts.length === 0) {
+    const fallback = payload.account ?? Object.values(payload)[0];
+    return fallback === undefined ? "" : String(fallback);
+  }
+  return parts.join(" ");
 }
 
 async function shutdown(stream, timer) {
