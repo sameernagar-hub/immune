@@ -14,10 +14,14 @@
     "watch": "node scripts/watch.js",
     "cold": "node scripts/cold.js",
     "rehearse": "node scripts/rehearse.js",
-    "inspect": "node scripts/inspect.js"
+    "inspect": "node scripts/inspect.js",
+    "live": "node scripts/live.js",
+    "voice:warm": "node scripts/voice-warm.js",
+    "team:env": "node scripts/share-env.js"
   },
   "dependencies": {
-    "mongodb": "^7.5.0"
+    "mongodb": "^7.5.0",
+    "qrcode": "^1.5.4"
   },
   "license": "MIT"
 }
