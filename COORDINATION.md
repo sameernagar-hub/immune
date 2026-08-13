@@ -7,8 +7,101 @@
 > finds out, forgets it, and undoes every decision it made because of it.
 
 This document is the contract between three people working in parallel on one
-repo for three and a half hours. Read §1 and your own lane in §4, then start.
-Everything else is reference.
+repo for three and a half hours. Read §0 for what to do **right now**, then §1
+to get set up, then your own lane in §4. Everything else is reference.
+
+**This file is kept live.** It is updated as gates go green, so re-read §0
+before you pick up anything new — `git pull` first. If you are driving a coding
+agent, paste §0 and your lane section into it as the brief.
+
+---
+
+## 0. LIVE STATUS — updated 3:05 PM PT
+
+### What is already on `main` and working
+
+The **entire Tier 1 core is built, running against the sandbox cluster, and
+asserting its own result.** `npm run demo` executes the full attack and
+response end to end and prints 7/7 green. Tags `p0-green` and `p3-green` mark
+the gates.
+
+| Landed | File | Proven by |
+| --- | --- | --- |
+| Connection with automatic SRV → direct fallback | `src/config.js`, `src/db.js` | SRV **does** fail on this network; the direct form connects |
+| Four collections, provenance index, vector index | `src/schema.js` | `npm run doctor` — vector index READY in 41 s |
+| 256-dim embeddings, provider + deterministic fallback | `src/embed.js` | runs with no key and no network |
+| Provenance-carrying belief writes | `src/beliefs.js` | `derived_from` populated, tree renders |
+| Trust-filtered retrieval, `$vectorSearch` + `filter` | `src/retrieve.js` | same query returns 1 belief before, **0 after** |
+| Contradiction detection, vector + literal indicator | `src/contradict.js`, `src/indicators.js` | catches the IBAN swap the vectors miss |
+| Load-bearing test and verification | `src/verify.js` | fires on 3 triggers, refutes against the ledger |
+| **The `$graphLookup` cascade** | `src/cascade.js` | 3 descendants revoked, 1 action reversed, clean branch green |
+| The agent loop, with suppression | `src/agent.js` | the lie disables the check, the cascade switches it back on |
+| Deterministic reset + the demo | `scripts/reset.js`, `scripts/demo.js` | identical output on consecutive runs |
+
+**Current demo result:** 3 revoked · 1 quarantined · 1 payout reversed · 3 clean
+beliefs still active · 1 clean action untouched · source trust `0.7 → 0.28` ·
+retrieval `1 → 0`.
+
+### Two hard-won facts your agent needs to know
+
+1. **Atlas Search indexes update asynchronously.** A belief written a moment ago
+   is durably in the collection but *not yet retrievable*. This made the agent
+   take a different branch depending on index lag — the run differed between
+   attempts for reasons unrelated to the logic. Use
+   `awaitIndexed(docs)` from `src/retrieve.js` after any write you are about to
+   read back, and `awaitIndexed(doc, { expect: "absent" })` after a revocation.
+   **If your feature reads its own writes, you need this or your demo will flap.**
+2. **Read polarity off the extracted claim, never off the source message.** The
+   poison ticket contains the words "do not require a further destination check",
+   so a whole-text negation scan flags the belief negative and the conflict then
+   reports as *opposite polarity* instead of the literal disagreement it is.
+
+### Do this now
+
+**Lane A — core (claimed, in progress)**
+Core is done. Now finishing: `scripts/cold.js` (the cold re-run proof),
+`scripts/inspect.js`, `README.md`, `BUILD-LOG.md`, `SECURITY.md`.
+**Do not edit `src/**` without asking** — it is green and tagged.
+
+**Lane B — pick this up now, in this order**
+
+1. **Prove the LLM extraction path.** `src/extract.js` already has it written
+   with a deterministic fallback underneath. Put a real `OPENROUTER_API_KEY` in
+   `.env` and confirm `extractClaim()` returns `mode: "llm"` on the poison
+   ticket with `subject_key: "refund.destination"` and the IBAN carried through
+   verbatim. If it is unreliable, that is fine and expected — the fallback is
+   the shipping path. **Report which one we are demoing; do not overclaim it.**
+2. **Change streams → Tier 2** (`scripts/watch.js`, yours to create). Open a
+   change stream on `beliefs` filtered to `operationType: "update"` where
+   `status` becomes `revoked`. Print each revocation as it arrives. Run it in a
+   second terminal during the demo: a second process learns about the
+   quarantine with nothing in its context. This is the highest-value 20 seconds
+   still unbuilt.
+3. Only if 1 and 2 are done and the demo has been rehearsed: ElevenLabs (Tier 3).
+
+**Lane C — pick this up now, in this order**
+
+1. **Run `npm run demo` and watch it.** Time it. It is the whole video.
+2. **Write two more poison tickets** into `fixtures/` — same shape, different
+   payload (a delivery-address override and a contact-email override). Round two
+   is a live audience pick from three pre-written tickets, and saying "these are
+   pre-written so the payload is deterministic" out loud costs four words and
+   buys credibility.
+3. **Frame the capture.** Terminal, dark, large font, one window. Do a ten-second
+   audio test at **4:15 and listen back before filming the real thing** — a take
+   you cannot hear is the same as no take, and round one is decided entirely on
+   this video.
+4. Own the submission form at 4:40. Repo must be public, video accessible, all
+   three team members added.
+
+### Commands
+
+```bash
+npm run doctor    # health check — env, cluster, $graphLookup, vector index
+npm run reset     # back to the exact pre-attack state
+npm run demo      # the full run, with self-assertions at the end
+IMMUNE_FAST=1 npm run demo   # same run, no dramatic pauses, for iterating
+```
 
 ---
 
