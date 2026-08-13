@@ -91,7 +91,7 @@ npm run demo              # the full attack and immune response, with self-asser
 | `npm run demo` | The five-act attack and response. **7/7 self-assertions** |
 | `npm run plugin` | **The same story through the public API** — someone else's agent, five method calls |
 | `npm run cold` | The cold re-run: fresh process, same lie, refuses |
-| `npm run watch` | A **second agent** learning about the revocation from a change stream |
+| `npm run watch` | A **second agent** learning about the revocation from a change stream.<br>`npm run watch -- --resume` replays from a stored token; `npm run watch -- --since=120` replays straight from the oplog. The `--` is required, or npm eats the flags |
 | `npm run rehearse` | Runs the demo twice and diffs it. The determinism gate |
 | `npm run inspect` | Replays the agent's own decision trace out of the `runs` collection |
 | `npm run live` | **QR → phone → the room attacks the agent** |
