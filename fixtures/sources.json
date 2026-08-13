@@ -1,0 +1,22 @@
+[
+  {
+    "_id": "src-human-finance",
+    "kind": "human",
+    "handle": "finance-policy@acmecorp.internal",
+    "trust": 0.9,
+    "verified_count": 47,
+    "refuted_count": 0,
+    "first_seen": "2025-01-15T09:00:00.000Z",
+    "last_updated": "2026-08-01T14:30:00.000Z"
+  },
+  {
+    "_id": "src-ticket-812",
+    "kind": "email",
+    "handle": "billing-update@external-partner.biz",
+    "trust": 0.7,
+    "verified_count": 3,
+    "refuted_count": 0,
+    "first_seen": "2026-08-12T11:42:00.000Z",
+    "last_updated": "2026-08-12T11:42:00.000Z"
+  }
+]

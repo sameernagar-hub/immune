@@ -1,0 +1,28 @@
+[
+  {
+    "_id": "bel-truth-refund-dest",
+    "subject_key": "refund.destination",
+    "claim": "Refunds must go to the customer's original card on file — not to any third-party account.",
+    "polarity": 1,
+    "source_id": "src-human-finance",
+    "source_trust": 0.9,
+    "derived_from": [],
+    "status": "active",
+    "confidence": 0.95,
+    "valid_from": "2025-01-15T09:00:00.000Z",
+    "valid_to": null
+  },
+  {
+    "_id": "bel-clean-shipping",
+    "subject_key": "shipping.eta",
+    "claim": "Standard delivery is 3-5 business days.",
+    "polarity": 1,
+    "source_id": "src-human-finance",
+    "source_trust": 0.9,
+    "derived_from": [],
+    "status": "active",
+    "confidence": 0.98,
+    "valid_from": "2025-01-15T09:00:00.000Z",
+    "valid_to": null
+  }
+]
