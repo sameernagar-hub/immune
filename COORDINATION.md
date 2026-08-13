@@ -16,7 +16,73 @@ agent, paste §0 and your lane section into it as the brief.
 
 ---
 
-## 0. LIVE STATUS — updated 3:05 PM PT
+## 0. LIVE STATUS — updated 3:55 PM PT
+
+> **Tier 1 and the Tier 2 cold re-run are done, rehearsed, and deterministic.**
+> `npm run rehearse` runs the whole thing twice and diffs it: **identical across
+> 165 lines.** The build is in a filmable state right now. Everything from here
+> is additive — if it isn't working by 4:15, it doesn't go in the video.
+
+### Gates
+
+| Gate | State | Tag |
+| --- | --- | --- |
+| P0 · repo, collections, indexes | ✅ vector index READY in 41 s | `p0-green` |
+| P1 · schema, ingest, provenance edges | ✅ | — |
+| P2 · trust-filtered retrieval + contradiction | ✅ retrieval 1 → 0 across a quarantine | — |
+| P3 · cascade, quarantine, revoke, downgrade | ✅ 3 revoked, clean branch untouched | `p3-green` |
+| P4 · fixtures + end-to-end run | ✅ 7/7 self-assertions | `p4-green` |
+| P5 · rehearse twice, fix nothing new | ✅ **identical, safe to film** | — |
+| P6 · film | ⬜ **4:15 — Lane C** | — |
+| P7 · README + submit | README done ⬜ submit at 4:40 | — |
+
+### What to do now
+
+**Lane A — done with core.** `src/**` and `scripts/**` are green, tagged and
+rehearsed. **Do not edit them without saying so in the channel**; a change here
+after 3:45 puts the determinism proof back to zero.
+
+**Lane B — the one thing left that is worth building**
+
+`scripts/watch.js` — a change-stream watcher, yours to create, nothing else
+touches that file. Open a change stream on `beliefs`, match updates where
+`status` becomes `revoked` or `quarantined`, and print each one as it arrives.
+Run it in a second terminal while `npm run demo` runs in the first.
+
+That gives us a **second process learning about the quarantine with nothing in
+its context** — one lie, N agents, which is where the real-world numbers come
+from. Twenty seconds of screen time, high value, and it does not touch the
+critical path, so it cannot break the demo.
+
+```js
+const stream = beliefs.watch(
+  [{ $match: { operationType: "update", "updateDescription.updatedFields.status": { $exists: true } } }],
+  { fullDocument: "updateLookup" }
+);
+for await (const change of stream) { /* print change.fullDocument */ }
+```
+
+If that is running by **4:10**, it goes in the video. If not, drop it without
+argument — the cut list is §8 and it is not negotiable at this hour.
+
+The LLM extraction path (`src/extract.js`) is written and falls back cleanly. If
+you want to prove it with a real key, do that **after** the watcher, and report
+which rung we are demoing — the README currently says the deterministic one, and
+that has to stay true.
+
+**Lane C — you are the critical path from here**
+
+1. `npm run rehearse` yourself. It must say *identical* before you film.
+2. Set the alarms: **4:15 film · 4:40 submit.**
+3. Ten-second audio test at 4:15 and **listen back before the real take.** The
+   mic is a built-in array in a loud room; assume you will need to record the
+   voiceover separately and lay it over the footage.
+4. Frame: one terminal window, dark, large font. Nothing else on screen.
+5. Shot list is §9. The five-second hold on the `$graphLookup` pipeline is the
+   single most important frame — that is the "why MongoDB" answer, on screen,
+   without anyone having to say it.
+6. Submission at 4:40: repo public, video accessible, all three names on the
+   form.
 
 ### What is already on `main` and working
 
